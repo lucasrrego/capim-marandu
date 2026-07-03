@@ -173,6 +173,16 @@ export function playFuel() {
   playBlip({ notes: [84, 91], type: 'square', gain: 0.3, step: 0.07, dur: 0.13 })
 }
 
+/** Caixa registradora do guarda ("cha-ching" — o pedágio da Lua). */
+export function playCash() {
+  playBlip({ notes: [96, 91], type: 'square', gain: 0.26, step: 0.07, dur: 0.1 })
+}
+
+/** Ensinamento do ET Bilu (acorde quente e ascendente — "busquem conhecimento"). */
+export function playWisdom() {
+  playBlip({ notes: [60, 64, 67, 72], type: 'triangle', gain: 0.28, step: 0.11, dur: 0.4 })
+}
+
 // curva de distorção (grit/rugido) pro corpo da explosão
 function distortionCurve(amount = 60) {
   const n = 256
