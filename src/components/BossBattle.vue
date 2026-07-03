@@ -20,7 +20,7 @@ const props = defineProps({
 const emit = defineEmits(['cleared', 'failed', 'hp'])
 
 // ---- Tuning -------------------------------------------------------------
-const BOSS_HP = 120
+const BOSS_HP = 50
 const BOSS_W = 120
 const BOSS_H = 74
 const BOSS_Y = 96
