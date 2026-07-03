@@ -158,9 +158,9 @@ onUnmounted(() => {
 
     <div ref="crawl" class="intro-crawl">
       <div ref="inner" class="intro-crawl-inner">
-        <p>Num planeta esquecido no fim do universo vivia Gugu, filho do lendário pensador ET Bilu — o único alienígena que um dia viajou à Terra e voltou pra contar.</p>
-        <p>Das histórias do pai, Gugu nunca esqueceu um apresentador de terno brilhante que ria alto e dava prêmios. Cresceu genial como o velho ET Bilu, mas vivia de queixo caído: qualquer novidade o deixava vislumbrado.</p>
-        <p>Seu sonho é um só: chegar à Lua da Terra e ver de pertinho o planeta mais bonito da galáxia. O caminho é traiçoeiro — asteroides, meteoros e combustível contado. Ligue os motores. A jornada começa agora.</p>
+        <p>Num planeta no fim do universo vivia Gugu, filho do lendário ET Bilu — o único alienígena que viajou à Terra e voltou pra contar.</p>
+        <p>Das histórias do pai, nunca esqueceu um apresentador de terno brilhante que ria alto e dava prêmios.</p>
+        <p>Seu sonho é chegar à Lua e ver de pertinho o planeta mais bonito da galáxia. Ligue os motores — a jornada começa agora.</p>
       </div>
     </div>
 
