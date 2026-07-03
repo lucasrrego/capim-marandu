@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import IntroScreen from './IntroScreen.vue'
+import StartScreen from './StartScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -15,11 +16,33 @@ const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
+const shield = ref(0)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
 const progressPct = ref(0)             // % da distância total percorrida
 const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
-const coins = ref(0)
+const bank = ref(0)         // total de moedas guardadas (persiste, gasto no hangar)
+const runCoins = ref(0)     // moedas ganhas na corrida atual (ainda não guardadas)
+const runKept = ref(0)      // quanto da corrida foi para o banco no fim (feedback)
+const deathLossPct = ref(75) // % perdido ao morrer nesta corrida (Cofre reduz)
+
+const displayCoins = computed(() =>
+  ['playing', 'paused', 'minigame'].includes(phase.value) ? runCoins.value : bank.value
+)
+
+const displayLives = computed(() => {
+  if (phase.value === 'start' || phase.value === 'hangar') {
+    return buildShipStats(hangarLoadout.value).startLives
+  }
+  return lives.value
+})
+
+const displayShield = computed(() => {
+  if (phase.value === 'start' || phase.value === 'hangar') {
+    return buildShipStats(hangarLoadout.value).shield
+  }
+  return shield.value
+})
 
 const canvas = ref(null)
 let ctx = null
@@ -34,6 +57,7 @@ const BASE_SPEED = 120               // px/s de rolagem
 const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
+const FUEL_REFILL = 60            // combustível por tanque F
 // Meta depois que o 5º warp (spawna em RUN_LENGTH=1500) rola a tela inteira e
 // passa pelo player (~+724 px), + folga pra andar mais um pouco antes da Lua.
 // Assim testa o fluxo completo: distância → pouso na Lua.
@@ -42,10 +66,13 @@ const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
 const RESPAWN_DELAY = 1000           // ms de explosão antes de renascer
+const SHIELD_INVULN = 900            // ms de invuln ao absorver 1 impacto no escudo
 const GOLD_DUR = 450                 // ms de brilho dourado ao pegar combustível
 
 // ---- Economia (moedas persistidas entre partidas) ----
 const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
+const BODY_KEY = 'capim-marandu:body'     // níveis de upgrade do corpo (persistem)
+const ENGINE_KEY = 'capim-marandu:engine' // níveis de upgrade do motor (persistem)
 // Recompensa de moedas por tipo destruído. Para novos vilões, basta
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
@@ -70,13 +97,45 @@ const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
 
-function loadCoins() {
-  coins.value = Number(localStorage.getItem(COINS_KEY)) || 0
+function loadBank() {
+  bank.value = Number(localStorage.getItem(COINS_KEY)) || 0
 }
+
+// fecha a corrida: guarda `fraction` do que ganhou (1 = vitória, 0.25 = morte)
+function settleRun(fraction) {
+  runKept.value = Math.floor(runCoins.value * fraction)
+  bank.value += runKept.value
+  localStorage.setItem(COINS_KEY, String(bank.value))
+}
+
+// bônus avulso direto no banco (ex.: recompensa do pouso na Lua)
 function addCoins(n) {
-  coins.value += n
-  localStorage.setItem(COINS_KEY, String(coins.value))
+  bank.value += n
+  localStorage.setItem(COINS_KEY, String(bank.value))
 }
+
+// carrega níveis salvos de uma trilha de upgrade em loadout[field]
+function loadUpgrade(key, field) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || 'null')
+    if (saved && typeof saved === 'object') {
+      hangarLoadout.value = {
+        ...hangarLoadout.value,
+        [field]: { ...hangarLoadout.value[field], ...saved },
+      }
+    }
+  } catch { /* JSON inválido: ignora */ }
+}
+
+function loadUpgrades() {
+  loadUpgrade(BODY_KEY, 'body')
+  loadUpgrade(ENGINE_KEY, 'engineUp')
+}
+
+// persiste banco (gasto no hangar) e níveis de upgrade comprados
+watch(bank, (v) => localStorage.setItem(COINS_KEY, String(v)))
+watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(BODY_KEY, JSON.stringify(b)), { deep: true })
+watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(ENGINE_KEY, JSON.stringify(e)), { deep: true })
 
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
@@ -144,6 +203,8 @@ function newState() {
     enemies: [],
     speed: BASE_SPEED,
     fuel: FUEL_MAX,
+    fuelMax: FUEL_MAX,
+    shield: 0,
     lives: 3,
     score: 0,
     distance: 0,
@@ -158,6 +219,8 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
+    coinAcc: 0,
+    runCoins: 0,
     moonActive: false,   // percurso concluído → Lua desce no topo
     moon: null,          // { x, y, r, warp:{x,y,w,h,alive} }
   }
@@ -283,11 +346,26 @@ function respawnPlayer(s) {
   const p = s.player
   const band = bankAt(s, p.y + p.h / 2)
   p.x = (band.left + band.right) / 2 - p.w / 2   // nasce no meio do caminho permitido
-  s.fuel = FUEL_MAX
+  s.fuel = s.fuelMax
   fuelPct.value = 100
+  s.shield = shipStats.shield                    // escudo recarrega a cada vida
+  shield.value = s.shield
   s.invuln = RESPAWN_INVULN * shipStats.armor
   s.speed = BASE_SPEED
   s.enemies = s.enemies.filter((e) => e.y < p.y - 160)
+}
+
+// Dano por impacto: o escudo absorve 1 acerto por nível antes de custar uma vida.
+function damagePlayer(s) {
+  if (s.respawn > 0 || s.invuln > 0) return
+  if (s.shield > 0) {
+    s.shield--
+    shield.value = s.shield
+    s.invuln = SHIELD_INVULN
+    s.goldFlash = GOLD_DUR         // flash rápido de feedback ao absorver
+    return
+  }
+  killPlayer(s)
 }
 
 function killPlayer(s) {
@@ -308,7 +386,7 @@ function update(dt, s) {
     s.respawn -= dt * 1000
     if (s.respawn <= 0) {
       s.respawn = 0
-      if (s.lives <= 0) { s.over = true; phase.value = 'over' }
+      if (s.lives <= 0) { s.over = true; settleRun(shipStats.deathKeep); phase.value = 'over' }
       else respawnPlayer(s)
     }
     return
@@ -403,7 +481,13 @@ function update(dt, s) {
         e.alive = false
         b.y = -999
         s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
-        addCoins(COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD)
+        s.coinAcc += (COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD) * shipStats.coinMul
+        const coinPayout = Math.floor(s.coinAcc)
+        s.coinAcc -= coinPayout
+        if (coinPayout > 0) {
+          s.runCoins += coinPayout
+          runCoins.value = s.runCoins
+        }
       }
     }
   }
@@ -421,7 +505,7 @@ function update(dt, s) {
   if (s.invuln <= 0) {
     if (p.x < band.left || p.x + p.w > band.right ||
         p.x < bandT.left || p.x + p.w > bandT.right) {
-      killPlayer(s)
+      damagePlayer(s)
     }
   }
 
@@ -431,11 +515,11 @@ function update(dt, s) {
     if (hit(p, e)) {
       if (e.type === 'fuel') {
         e.alive = false
-        s.fuel = Math.min(FUEL_MAX, s.fuel + 60)
+        s.fuel = Math.min(s.fuelMax, s.fuel + Math.round(FUEL_REFILL * shipStats.fuelPickupMul))
         s.goldFlash = GOLD_DUR
       } else if (s.invuln <= 0) {
         e.alive = false
-        killPlayer(s)
+        damagePlayer(s)
       }
     }
   }
@@ -454,6 +538,7 @@ function update(dt, s) {
   if (s.moonActive && s.moon && s.moon.warp.alive && hit(p, s.moon.warp)) {
     s.moon.warp.alive = false
     s.over = true
+    settleRun(1)          // percurso concluído → guarda as moedas da corrida
     enterMoon()
     return
   }
@@ -466,7 +551,7 @@ function update(dt, s) {
 
   // sincroniza HUD
   score.value = Math.floor(s.score)
-  fuelPct.value = Math.max(0, Math.round((s.fuel / FUEL_MAX) * 100))
+  fuelPct.value = Math.max(0, Math.round((s.fuel / s.fuelMax) * 100))
   speedLabel.value = (s.speed / BASE_SPEED).toFixed(1) + 'x'
   progressPct.value = Math.min(100, (s.distance / PROGRESS_GOAL) * 100)
 }
@@ -754,8 +839,15 @@ function startGame(loadout) {
   state.player.h = shipStats.hitboxH
   state.player.x = W / 2 - state.player.w / 2
   state.lives = shipStats.startLives
+  state.fuelMax = shipStats.fuelMax
+  state.fuel = shipStats.fuelMax
+  state.shield = shipStats.shield
   score.value = 0
   lives.value = shipStats.startLives
+  shield.value = shipStats.shield
+  runCoins.value = 0
+  runKept.value = 0
+  deathLossPct.value = Math.round((1 - shipStats.deathKeep) * 100)
   fuelPct.value = 100
   progressPct.value = 0
   phase.value = 'playing'
@@ -816,7 +908,8 @@ function holdFire(v) {
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
-  loadCoins()
+  loadBank()
+  loadUpgrades()
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
   raf = requestAnimationFrame(frame)
@@ -850,17 +943,13 @@ onUnmounted(() => {
 
         <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
 
-        <div v-else-if="phase === 'start'" class="rr-overlay">
-          <h2>River Raid</h2>
-          <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
-          <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-          <button @click="playIntro">▶ Jogar</button>
-          <button class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
-        </div>
+        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" />
+        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
 
         <HangarScreen
           v-else-if="phase === 'hangar'"
           v-model:loadout="hangarLoadout"
+          v-model:coins="bank"
           class="rr-hangar"
           @launch="startGame"
           @back="phase = 'start'"
@@ -876,19 +965,23 @@ onUnmounted(() => {
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">
           <h2>Pausado</h2>
+          <p>Respira, Gugu.</p>
           <button @click="togglePause">▶ Continuar</button>
         </div>
 
         <div v-else-if="phase === 'over'" class="rr-overlay">
           <h2>Fim de jogo</h2>
+          <p>Foi mal, pai... quase lá.</p>
           <p>Pontuação: <b>{{ score }}</b></p>
+          <p class="rr-loot">🪙 {{ runCoins }} na corrida · guardou <b>{{ runKept }}</b> (perdeu {{ deathLossPct }}%)</p>
           <button @click="enterHangar">↻ Jogar de novo</button>
         </div>
 
         <div v-else-if="phase === 'won'" class="rr-overlay">
-          <h2>🏆 Você venceu!</h2>
-          <p>Chegou ao fim do percurso.</p>
+          <h2>A LUA! 🌙</h2>
+          <p>Gugu conseguiu! Que vista, hein?</p>
           <p>Pontuação: <b>{{ score }}</b></p>
+          <p class="rr-loot">🪙 guardou <b>{{ runKept }}</b> no banco</p>
           <button @click="enterHangar">↻ Jogar de novo</button>
         </div>
 
@@ -900,7 +993,7 @@ onUnmounted(() => {
       </div>
 
       <aside class="rr-panel">
-        <h1 class="rr-title">River Raid</h1>
+        <h1 class="rr-title">GUGU</h1>
 
         <div class="rr-stat">
           <span class="rr-stat-label">Pontos</span>
@@ -908,15 +1001,23 @@ onUnmounted(() => {
         </div>
 
         <div class="rr-stat">
-          <span class="rr-stat-label">Moedas</span>
-          <span class="rr-stat-value rr-coins">🪙 {{ coins }}</span>
+          <span class="rr-stat-label">{{ ['playing', 'paused', 'minigame'].includes(phase) ? 'Corrida' : 'Banco' }}</span>
+          <span class="rr-stat-value rr-coins">🪙 {{ displayCoins }}</span>
         </div>
 
         <div class="rr-stat">
           <span class="rr-stat-label">Vidas</span>
           <span class="rr-lives">
-            <span v-for="n in lives" :key="n" class="rr-life">🚀</span>
-            <span v-if="lives <= 0" class="rr-dash">—</span>
+            <span v-for="n in displayLives" :key="n" class="rr-life">🚀</span>
+            <span v-if="displayLives <= 0" class="rr-dash">—</span>
+          </span>
+        </div>
+
+        <div v-if="displayShield > 0 || phase === 'playing'" class="rr-stat">
+          <span class="rr-stat-label">Escudo</span>
+          <span class="rr-lives">
+            <span v-for="n in displayShield" :key="n" class="rr-life rr-shield">🛡️</span>
+            <span v-if="displayShield <= 0" class="rr-dash">—</span>
           </span>
         </div>
 
@@ -987,13 +1088,14 @@ onUnmounted(() => {
 
 .rr-title {
   margin: 0 0 2px;
-  font-size: 2rem;
-  font-weight: 900;
-  line-height: 0.98;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 1.4rem;
+  font-weight: 400;
+  line-height: 1.1;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #fff;
-  text-shadow: 0 0 12px var(--hud-glow), 0 0 2px #fff;
+  text-shadow: 0 0 12px var(--hud-glow), 0 3px 0 #4a2f8f;
 }
 
 .rr-stat {
@@ -1035,6 +1137,7 @@ onUnmounted(() => {
   min-height: 1.5rem;
 }
 .rr-life { filter: drop-shadow(0 0 5px rgba(255, 207, 58, 0.6)); }
+.rr-shield { filter: drop-shadow(0 0 5px rgba(120, 180, 255, 0.7)); }
 .rr-dash { color: var(--hud-dim); }
 
 .rr-fuel {
@@ -1124,9 +1227,16 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 20px;
 }
-.rr-overlay h2 { margin: 0; font-size: 1.8rem; }
+.rr-overlay h2 {
+  margin: 0;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 1.2rem;
+  line-height: 1.4;
+  text-shadow: 0 0 12px var(--hud-glow), 0 3px 0 #4a2f8f;
+}
 .rr-overlay p { margin: 0; line-height: 1.5; }
 .rr-keys { font-size: 0.8rem; opacity: 0.8; }
+.rr-loot { font-size: 0.85rem; color: #ffd24d; }
 .rr-overlay button, .rr-touch button {
   cursor: pointer;
   border: none;
@@ -1140,14 +1250,23 @@ onUnmounted(() => {
   background: var(--accent, #aa3bff);
   color: #fff;
 }
-.rr-overlay button.rr-moon-btn {
+.rr-moon-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 5;
   padding: 8px 18px;
+  font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
-  background: transparent;
+  background: rgba(18, 13, 32, 0.72);
   border: 1px solid rgba(155, 123, 255, 0.5);
+  border-radius: 8px;
   color: #c9c1e6;
+  cursor: pointer;
 }
+.rr-moon-btn:hover { filter: brightness(1.2); }
 .rr-touch {
   display: flex;
   gap: 10px;
@@ -1183,8 +1302,8 @@ onUnmounted(() => {
   .rr-title {
     width: 100%;
     text-align: center;
-    font-size: 1.4rem;
-    line-height: 1;
+    font-size: 1.1rem;
+    line-height: 1.1;
     margin: 0;
   }
   .rr-stat-value { font-size: 1.5rem; }

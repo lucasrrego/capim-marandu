@@ -12,15 +12,10 @@ export const SHIP_PARTS = {
     { id: 'wide', name: 'Larga', desc: 'Manobra lenta, +1 vida', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82, lifeBonus: 1 },
     { id: 'delta', name: 'Delta', desc: 'Manobra rápida, −1 vida', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.25, lifeBonus: -1 },
   ],
-  body: [
-    { id: 'std', name: 'Leve', desc: 'Fuselagem compacta', color: '#f4f4f4', armor: 1, fuelUse: 1 },
-    { id: 'heavy', name: 'Blindado', desc: 'Aguenta mais impacto', color: '#b8bcc8', armor: 1.4, fuelUse: 1.15 },
-    { id: 'stream', name: 'Aerodinâmico', desc: 'Menos consumo de combustível', color: '#e8eef8', armor: 0.85, fuelUse: 0.82 },
-  ],
   nose: [
-    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', damageMul: 1, hitboxW: 1 },
-    { id: 'sharp', name: 'Agulha', desc: '+15% dano nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', damageMul: 1.15, hitboxW: 1 },
-    { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
+    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', coinMul: 1, fuelPickupMul: 1 },
+    { id: 'sharp', name: 'Agulha', desc: '+25% moedas nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', coinMul: 1.25, fuelPickupMul: 1 },
+    { id: 'blunt', name: 'Rombo', desc: '+25% combustível nos tanques F', shape: 'blunt', length: -2, tipColor: '#d0d0d0', coinMul: 1, fuelPickupMul: 1.25 },
   ],
   engine: [
     { id: 'std', name: 'Turbo', desc: 'Velocidade e consumo equilibrados', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelUse: 1, accelMul: 1, cruiseMul: 1 },
@@ -34,11 +29,61 @@ export const SHIP_PARTS = {
   ],
 }
 
+// Corpo = trilhas de upgrade incrementais compradas com moedas.
+// cost(lvl) = custo em moedas para subir de `lvl` para `lvl+1`.
+export const BODY_COLOR = '#b8bcc8'
+export const BODY_TRACKS = [
+  {
+    key: 'fuel',
+    label: 'Tanque',
+    desc: '+combustível máximo por nível',
+    max: 5,
+    fuelPerLevel: 20,
+    cost: (lvl) => 3 + lvl * 2,
+  },
+  {
+    key: 'shield',
+    label: 'Escudo',
+    desc: 'Anula 1 impacto por nível',
+    max: 3,
+    cost: (lvl) => 6 + lvl * 4,
+  },
+  {
+    key: 'save',
+    label: 'Cofre',
+    desc: '-5% de perda de moedas ao morrer',
+    max: 10,
+    cost: (lvl) => 4 + lvl * 2,
+  },
+]
+
+// Perda de moedas ao morrer: 75% base, -5% por nível de Cofre, mínimo 25%.
+const BASE_DEATH_KEEP = 0.25
+const DEATH_KEEP_PER_LEVEL = 0.05
+const MAX_DEATH_KEEP = 0.75
+
+const DEFAULT_BODY = { fuel: 0, shield: 0, save: 0 }
+
+// Motor = peça discreta + trilha de upgrade incremental comprada com moedas.
+export const ENGINE_SPEED_PER_LEVEL = 0.15
+export const ENGINE_TRACKS = [
+  {
+    key: 'speed',
+    label: 'Turbina',
+    desc: '+velocidade máxima por nível',
+    max: 3,
+    cost: (lvl) => 4 + lvl * 3,
+  },
+]
+
+const DEFAULT_ENGINE_UP = { speed: 0 }
+
 export const DEFAULT_LOADOUT = {
   wing: 'std',
-  body: 'std',
+  body: { ...DEFAULT_BODY },
   nose: 'std',
   engine: 'std',
+  engineUp: { ...DEFAULT_ENGINE_UP },
   weapon: 'cannon',
 }
 
@@ -46,10 +91,15 @@ export function getPart(category, id) {
   return SHIP_PARTS[category].find((p) => p.id === id) ?? SHIP_PARTS[category][0]
 }
 
+export function resolveBody(body) {
+  const levels = { ...DEFAULT_BODY, ...(body ?? {}) }
+  return { levels, color: BODY_COLOR }
+}
+
 export function resolveLoadout(loadout = DEFAULT_LOADOUT) {
   return {
     wing: getPart('wing', loadout.wing),
-    body: getPart('body', loadout.body),
+    body: resolveBody(loadout.body),
     nose: getPart('nose', loadout.nose),
     engine: getPart('engine', loadout.engine),
     weapon: getPart('weapon', loadout.weapon),
@@ -57,28 +107,34 @@ export function resolveLoadout(loadout = DEFAULT_LOADOUT) {
 }
 
 const BASE_LIVES = 3
+const BASE_FUEL = 100
+const FUEL_PER_LEVEL = 20
 const PLAYER_W = 26
 const PLAYER_H = 32
 
 export function buildShipStats(loadout) {
   const p = resolveLoadout(loadout)
-  let startLives = BASE_LIVES + (p.wing.lifeBonus ?? 0)
-  if (p.body.armor >= 1.3) startLives += 1
-  startLives = Math.max(1, startLives)
+  const engineUp = { ...DEFAULT_ENGINE_UP, ...(loadout.engineUp ?? {}) }
+  const startLives = Math.max(1, BASE_LIVES + (p.wing.lifeBonus ?? 0))
   return {
     agility: p.wing.agility,
     lifeBonus: p.wing.lifeBonus ?? 0,
-    armor: p.body.armor,
-    fuelUse: p.body.fuelUse * (p.engine.fuelUse ?? 1),
-    maxSpeedMul: p.engine.maxSpeed,
+    armor: 1,
+    fuelMax: BASE_FUEL + (p.body.levels.fuel ?? 0) * FUEL_PER_LEVEL,
+    shield: p.body.levels.shield ?? 0,
+    deathKeep: Math.min(MAX_DEATH_KEEP, BASE_DEATH_KEEP + (p.body.levels.save ?? 0) * DEATH_KEEP_PER_LEVEL),
+    fuelUse: p.engine.fuelUse ?? 1,
+    maxSpeedMul: p.engine.maxSpeed + engineUp.speed * ENGINE_SPEED_PER_LEVEL,
     accelMul: p.engine.accelMul ?? 1,
     cruiseMul: p.engine.cruiseMul ?? 1,
     fireCd: p.weapon.fireCd,
-    damage: p.weapon.damage * (p.nose.damageMul ?? 1),
+    damage: p.weapon.damage,
+    coinMul: p.nose.coinMul ?? 1,
+    fuelPickupMul: p.nose.fuelPickupMul ?? 1,
     bulletW: p.weapon.bulletW,
     bulletH: p.weapon.bulletH,
     bulletColor: p.weapon.bulletColor,
-    hitboxW: Math.round(PLAYER_W * (p.nose.hitboxW ?? 1)),
+    hitboxW: PLAYER_W,
     hitboxH: PLAYER_H,
     startLives,
   }
@@ -115,119 +171,142 @@ export function drawMoon(ctx, cx, cy, r) {
   ctx.restore()
 }
 
+// --- foguete em pixel art ---
+// grade 13 col x 16 linhas; cada célula vira um bloco. Legenda:
+//   B corpo · H realce · S sombra · O contorno · N bico/trim · F aleta
+//   G vidro da escotilha · L brilho do vidro · E bocal
+const SHIP_GRID_W = 13
+const SHIP_GRID_H = 16
+
+// topo do foguete (linhas 0-3) varia conforme o formato do bico
+const NOSE_TOPS = {
+  cone: ['......N......', '......N......', '.....NNN.....', '....NNNNN....'],
+  needle: ['......N......', '......N......', '......N......', '.....NNN.....'],
+  blunt: ['....NNNNN....', '....NNNNN....', '....NNNNN....', '...NNNNNNN...'],
+}
+
+// corpo do foguete (linhas 4-15), independente do bico
+const SHIP_BODY = [
+  '....BHBSB....',
+  '...BHBBBSB...',
+  '...BBGGGBB...',
+  '...BBGLGBB...',
+  '...BBGGGBB...',
+  '..BBHBBBSBB..',
+  '.FBBBBBBBBBF.',
+  'FFBBBBBBBBBFF',
+  'FFBHBBBBSBBFF',
+  '..OBBBBBBBO..',
+  '...OSBBBSO...',
+  '....EEEEE....',
+]
+
+// clareia (amt>0) ou escurece (amt<0) uma cor hex
+function shadeHex(hex, amt) {
+  const n = parseInt(hex.slice(1), 16)
+  let r = (n >> 16) & 255
+  let g = (n >> 8) & 255
+  let b = n & 255
+  if (amt >= 0) {
+    r += (255 - r) * amt
+    g += (255 - g) * amt
+    b += (255 - b) * amt
+  } else {
+    const k = 1 + amt
+    r *= k
+    g *= k
+    b *= k
+  }
+  return `rgb(${r | 0}, ${g | 0}, ${b | 0})`
+}
+
 export function drawShip(ctx, x, y, w, h, loadout, time = 0, opts = {}) {
   const parts = resolveLoadout(loadout)
-  const cx = x + w / 2
-  const top = y
-  const bw = w * (parts.nose.shape === 'blunt' ? 0.31 : 0.27)
   const gold = opts.goldTint ?? 0
 
   const bodyColor = gold > 0 ? '#ffd34d' : parts.body.color
-  const trimColor = gold > 0 ? '#e0a020' : parts.nose.tipColor
+  const trimColor = gold > 0 ? '#f0b840' : parts.nose.tipColor
   const finColor = gold > 0 ? '#e0a020' : parts.wing.wingColor
 
-  // chama (animada, atrás do foguete)
-  const fl = (8 + (Math.floor(time / 70) % 3) * 4) * (h / 32) * parts.engine.power
-  const flameW = w * 0.38 * Math.min(1.4, parts.engine.power)
-  ctx.fillStyle = parts.engine.flameColor
-  ctx.beginPath()
-  ctx.moveTo(cx - flameW / 2, top + h - h * 0.06)
-  ctx.lineTo(cx + flameW / 2, top + h - h * 0.06)
-  ctx.lineTo(cx, top + h + fl)
-  ctx.closePath()
-  ctx.fill()
-  ctx.fillStyle = '#ffe14d'
-  ctx.beginPath()
-  ctx.moveTo(cx - flameW * 0.33, top + h - h * 0.06)
-  ctx.lineTo(cx + flameW * 0.33, top + h - h * 0.06)
-  ctx.lineTo(cx, top + h + fl * 0.55)
-  ctx.closePath()
-  ctx.fill()
+  const colors = {
+    B: bodyColor,
+    H: shadeHex(bodyColor, 0.28),
+    S: shadeHex(bodyColor, -0.26),
+    O: shadeHex(bodyColor, -0.55),
+    N: trimColor,
+    F: finColor,
+    G: '#1a6fb0',
+    L: '#8fd0f5',
+    E: '#4a4a52',
+  }
+
+  const pxW = w / SHIP_GRID_W
+  const pxH = h / SHIP_GRID_H
+  // desenha uma célula da grade como bloco, encaixando nas bordas de pixel
+  const px = (c, r, color) => {
+    const x0 = Math.round(x + c * pxW)
+    const x1 = Math.round(x + (c + 1) * pxW)
+    const y0 = Math.round(y + r * pxH)
+    const y1 = Math.round(y + (r + 1) * pxH)
+    ctx.fillStyle = color
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+  }
+
+  // chama (atrás, abaixo do bocal — linhas >= 16), animada e escalada pela potência
+  const power = parts.engine.power ?? 1
+  const flick = Math.floor(time / 70) % 3
+  const flameColor = parts.engine.flameColor
+  const flameLen = Math.max(2, Math.round((2 + flick) * power))
+  for (let r = 0; r < flameLen; r++) {
+    const half = Math.max(0, Math.round((1 - r / flameLen) * 2))
+    for (let c = 6 - half; c <= 6 + half; c++) px(c, SHIP_GRID_H + r, flameColor)
+  }
+  const coreLen = Math.max(1, Math.floor(flameLen * 0.65))
+  for (let r = 0; r < coreLen; r++) {
+    const half = Math.max(0, Math.round((1 - r / coreLen) * 1))
+    for (let c = 6 - half; c <= 6 + half; c++) px(c, SHIP_GRID_H + r, '#ffe14d')
+  }
   if (parts.engine.id === 'after') {
-    ctx.fillStyle = '#fff59d'
-    ctx.beginPath()
-    ctx.moveTo(cx - w * 0.08, top + h + fl * 0.35)
-    ctx.lineTo(cx + w * 0.08, top + h + fl * 0.35)
-    ctx.lineTo(cx, top + h + fl * 1.15)
-    ctx.closePath()
-    ctx.fill()
+    for (let r = 0; r < flameLen + 2; r++) {
+      px(6, SHIP_GRID_H + r, r > (flameLen + 2) * 0.5 ? '#fff59d' : '#ffe14d')
+    }
   }
 
-  // aletas
-  const finBase = parts.wing.id === 'delta' ? 0.15 : 0.23
-  const finExt = w * finBase * (parts.wing.wingW ?? 1)
-  const finDrop = h * (parts.wing.id === 'wide' ? 0.42 : 0.375)
-  ctx.fillStyle = finColor
-  ctx.beginPath()
-  ctx.moveTo(cx - bw, top + h - finDrop)
-  ctx.lineTo(cx - bw - finExt, top + h - h * 0.03)
-  ctx.lineTo(cx - bw, top + h - h * 0.09)
-  ctx.closePath()
-  ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(cx + bw, top + h - finDrop)
-  ctx.lineTo(cx + bw + finExt, top + h - h * 0.03)
-  ctx.lineTo(cx + bw, top + h - h * 0.09)
-  ctx.closePath()
-  ctx.fill()
+  // monta a grade: topo do bico + corpo
+  const nose = NOSE_TOPS[parts.nose.shape] ?? NOSE_TOPS.cone
+  const grid = nose.concat(SHIP_BODY).map((row) => row.split(''))
 
-  // corpo
-  const bodyTop = top + h * 0.28 + (parts.nose.length ?? 0) * (h / 32)
-  ctx.fillStyle = bodyColor
-  ctx.fillRect(cx - bw, bodyTop, bw * 2, h - bodyTop + top - h * 0.125)
-
-  // bico
-  ctx.fillStyle = trimColor
-  if (parts.nose.shape === 'needle') {
-    ctx.beginPath()
-    ctx.moveTo(cx, top - h * 0.12)
-    ctx.lineTo(cx - bw * 0.55, bodyTop)
-    ctx.lineTo(cx + bw * 0.55, bodyTop)
-    ctx.closePath()
-    ctx.fill()
-  } else if (parts.nose.shape === 'blunt') {
-    ctx.fillRect(cx - bw, bodyTop - h * 0.06, bw * 2, h * 0.08)
-    ctx.beginPath()
-    ctx.moveTo(cx, top)
-    ctx.lineTo(cx - bw, bodyTop)
-    ctx.lineTo(cx + bw, bodyTop)
-    ctx.closePath()
-    ctx.fill()
-  } else {
-    ctx.beginPath()
-    ctx.moveTo(cx, top)
-    ctx.lineTo(cx - bw, bodyTop)
-    ctx.lineTo(cx + bw, bodyTop)
-    ctx.closePath()
-    ctx.fill()
+  // ajustes de aleta conforme a asa
+  if (parts.wing.id === 'wide') {
+    grid[9][1] = 'F'
+    grid[9][11] = 'F'
+    grid[13][1] = 'F'
+    grid[13][11] = 'F'
+  } else if (parts.wing.id === 'delta') {
+    grid[11][0] = '.'
+    grid[11][12] = '.'
+    grid[12][0] = '.'
+    grid[12][12] = '.'
+    grid[9][1] = 'F'
+    grid[9][11] = 'F'
   }
 
-  // escotilha
-  ctx.fillStyle = '#1a6fb0'
-  ctx.beginPath()
-  ctx.arc(cx, top + h * 0.53, w * 0.13, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#8fd0f5'
-  ctx.beginPath()
-  ctx.arc(cx - w * 0.04, top + h * 0.5, w * 0.05, 0, Math.PI * 2)
-  ctx.fill()
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r]
+    for (let c = 0; c < row.length; c++) {
+      const color = colors[row[c]]
+      if (color) px(c, r, color)
+    }
+  }
 
-  // bocal
-  ctx.fillStyle = '#555'
-  ctx.fillRect(cx - w * 0.15, top + h - h * 0.125, w * 0.3, h * 0.094)
-
-  // arma
-  ctx.fillStyle = parts.weapon.bulletColor
-  if (parts.weapon.id === 'cannon') {
-    ctx.fillRect(cx - w * 0.08, bodyTop - h * 0.06, w * 0.15, h * 0.25)
-  } else if (parts.weapon.id === 'rapid') {
-    ctx.fillRect(cx - bw - w * 0.04, bodyTop + h * 0.08, w * 0.12, h * 0.19)
-    ctx.fillRect(cx + bw - w * 0.08, bodyTop + h * 0.08, w * 0.12, h * 0.19)
+  // detalhe da arma na cor do projétil
+  const bc = parts.weapon.bulletColor
+  if (parts.weapon.id === 'rapid') {
+    px(1, 10, bc)
+    px(11, 10, bc)
+  } else if (parts.weapon.id === 'plasma') {
+    px(6, 4, bc)
   } else {
-    ctx.beginPath()
-    ctx.arc(cx, bodyTop + h * 0.12, w * 0.19, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.fillRect(cx - w * 0.04, bodyTop + h * 0.03, w * 0.08, h * 0.19)
+    px(6, 3, bc)
   }
 }
