@@ -121,6 +121,79 @@ export const GUGU = {
   ],
 }
 
+// ---- Logos de marcas (pixel art) para os outdoors da Lua ----------------
+// Cada logo tem sua própria paleta e um bg opcional (fundo do painel).
+
+// Starbucks: emblema verde com estrela branca
+const _STARBUCKS = [
+  '....GGGGG....',
+  '..GGGGGGGGG..',
+  '.GGGGGGGGGGG.',
+  'GGGGGGwGGGGGG',
+  'GGGGGwwwGGGGG',
+  'GGGwwwwwwwGGG',
+  'GGGGwwwwwGGGG',
+  'GGGGwwGwwGGGG',
+  'GGGwwGGGwwGGG',
+  'GGGGGGGGGGGGG',
+  '.GGGGGGGGGGG.',
+  '..GGGGGGGGG..',
+  '....GGGGG....',
+]
+
+// D&G: monograma preto em painel branco
+const _D = ['kkkk.', 'k..k.', 'k..k.', 'k..k.', 'k..k.', 'k..k.', 'kkkk.']
+const _AMP = ['.kk..', 'k..k.', 'k.k..', '.k...', 'k.k.k', 'k..k.', '.kk.k']
+const _G2 = ['.kkkk', 'k....', 'k....', 'k.kkk', 'k...k', 'k...k', '.kkkk']
+const _DG = _D.map((d, i) => `${d}.${_AMP[i]}.${_G2[i]}`)
+
+// Capim: "C" verde-limão em fundo roxo
+const _CAPIM = [
+  '...ccccc...',
+  '..ccccccc..',
+  '.ccc...ccc.',
+  '.ccc.......',
+  'ccc........',
+  'ccc........',
+  'ccc........',
+  'ccc........',
+  'ccc........',
+  '.ccc.......',
+  '.ccc...ccc.',
+  '..ccccccc..',
+  '...ccccc...',
+]
+
+export const LOGOS = {
+  starbucks: {
+    bg: null,
+    palette: { '.': null, G: '#1e6b3f', w: '#f4f4f4' },
+    rows: _STARBUCKS,
+  },
+  dg: {
+    bg: '#f4f4f4',
+    palette: { '.': null, k: '#0a0713' },
+    rows: _DG,
+  },
+  capim: {
+    bg: '#2b1a63',
+    palette: { '.': null, c: '#b6e04a' },
+    rows: _CAPIM,
+  },
+}
+
+/** Desenha um logo centralizado e escalado dentro de uma caixa. */
+export function drawLogo(ctx, name, x, y, boxW, boxH) {
+  const lg = LOGOS[name]
+  if (!lg) return
+  const cols = lg.rows.reduce((m, r) => Math.max(m, r.length), 0)
+  const rowsN = lg.rows.length
+  const scale = Math.max(1, Math.floor(Math.min((boxW - 4) / cols, (boxH - 4) / rowsN)))
+  const w = cols * scale
+  const h = rowsN * scale
+  drawSprite(ctx, x + (boxW - w) / 2, y + (boxH - h) / 2, lg.rows, scale, lg.palette)
+}
+
 // ---- Minigame "Abdução da Vó Baiana" (Brasil × Japão) -------------------
 // Jogadores de futebol: mesmo molde, muda camisa/calção. Grade 10 de largura.
 
