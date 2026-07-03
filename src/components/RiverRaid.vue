@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
@@ -19,6 +19,13 @@ const progressPct = ref(0)             // % da distância total percorrida
 const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
 const coins = ref(0)
 
+const displayLives = computed(() => {
+  if (phase.value === 'start' || phase.value === 'hangar') {
+    return buildShipStats(hangarLoadout.value).startLives
+  }
+  return lives.value
+})
+
 const canvas = ref(null)
 let ctx = null
 let raf = 0
@@ -32,6 +39,7 @@ const BASE_SPEED = 120               // px/s de rolagem
 const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
+const FUEL_REFILL = 60            // combustível por tanque F
 const GOAL_DISTANCE = 24000           // px de rolagem até a vitória
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
@@ -145,6 +153,7 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
+    coinAcc: 0,
   }
 }
 
@@ -367,7 +376,10 @@ function update(dt, s) {
         e.alive = false
         b.y = -999
         s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
-        addCoins(COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD)
+        s.coinAcc += (COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD) * shipStats.coinMul
+        const coinPayout = Math.floor(s.coinAcc)
+        s.coinAcc -= coinPayout
+        if (coinPayout > 0) addCoins(coinPayout)
       }
     }
   }
@@ -395,7 +407,7 @@ function update(dt, s) {
     if (hit(p, e)) {
       if (e.type === 'fuel') {
         e.alive = false
-        s.fuel = Math.min(FUEL_MAX, s.fuel + 60)
+        s.fuel = Math.min(FUEL_MAX, s.fuel + Math.round(FUEL_REFILL * shipStats.fuelPickupMul))
         s.goldFlash = GOLD_DUR
       } else if (s.invuln <= 0) {
         e.alive = false
@@ -820,8 +832,8 @@ onUnmounted(() => {
         <div class="rr-stat">
           <span class="rr-stat-label">Vidas</span>
           <span class="rr-lives">
-            <span v-for="n in lives" :key="n" class="rr-life">🚀</span>
-            <span v-if="lives <= 0" class="rr-dash">—</span>
+            <span v-for="n in displayLives" :key="n" class="rr-life">🚀</span>
+            <span v-if="displayLives <= 0" class="rr-dash">—</span>
           </span>
         </div>
 

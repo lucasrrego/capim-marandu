@@ -18,9 +18,9 @@ export const SHIP_PARTS = {
     { id: 'stream', name: 'Aerodinâmico', desc: 'Menos consumo de combustível', color: '#e8eef8', armor: 0.85, fuelUse: 0.82 },
   ],
   nose: [
-    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', damageMul: 1, hitboxW: 1 },
-    { id: 'sharp', name: 'Agulha', desc: '+15% dano nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', damageMul: 1.15, hitboxW: 1 },
-    { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
+    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', coinMul: 1, fuelPickupMul: 1 },
+    { id: 'sharp', name: 'Agulha', desc: '+25% moedas nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', coinMul: 1.25, fuelPickupMul: 1 },
+    { id: 'blunt', name: 'Rombo', desc: '+25% combustível nos tanques F', shape: 'blunt', length: -2, tipColor: '#d0d0d0', coinMul: 1, fuelPickupMul: 1.25 },
   ],
   engine: [
     { id: 'std', name: 'Turbo', desc: 'Velocidade e consumo equilibrados', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelUse: 1, accelMul: 1, cruiseMul: 1 },
@@ -74,11 +74,13 @@ export function buildShipStats(loadout) {
     accelMul: p.engine.accelMul ?? 1,
     cruiseMul: p.engine.cruiseMul ?? 1,
     fireCd: p.weapon.fireCd,
-    damage: p.weapon.damage * (p.nose.damageMul ?? 1),
+    damage: p.weapon.damage,
+    coinMul: p.nose.coinMul ?? 1,
+    fuelPickupMul: p.nose.fuelPickupMul ?? 1,
     bulletW: p.weapon.bulletW,
     bulletH: p.weapon.bulletH,
     bulletColor: p.weapon.bulletColor,
-    hitboxW: Math.round(PLAYER_W * (p.nose.hitboxW ?? 1)),
+    hitboxW: PLAYER_W,
     hitboxH: PLAYER_H,
     startLives,
   }
