@@ -4,7 +4,7 @@ import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import IntroScreen from './IntroScreen.vue'
-import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
+import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
@@ -34,7 +34,10 @@ const BASE_SPEED = 120               // px/s de rolagem
 const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
-const GOAL_DISTANCE = 24000           // px de rolagem até a vitória
+// Meta depois que o 5º warp (spawna em RUN_LENGTH=1500) rola a tela inteira e
+// passa pelo player (~+724 px), + folga pra andar mais um pouco antes da Lua.
+// Assim testa o fluxo completo: distância → pouso na Lua.
+const GOAL_DISTANCE = 2600            // px de rolagem até o fim do percurso
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
@@ -54,6 +57,14 @@ const WARP_INTERVAL = RUN_LENGTH / 5
 const WARP_COLORS = ['#ff4d4d', '#ffd24d', '#37e0a0', '#9b7bff', '#ff8a1a']
 const WARP_W = 32
 const WARP_H = 40
+// Lua-destino no topo do percurso (6º "warp" = portal de pouso)
+const MOON_R = 128                   // raio do disco da Lua
+const MOON_WARP_W = 64               // hitbox do portal centralizado na Lua
+const MOON_WARP_H = 64
+// px que a Lua desce (do topo até o player) após GOAL_DISTANCE.
+// A barra de progresso só chega a 100% quando o portal alcança o player.
+const MOON_APPROACH = (H - 74) + MOON_R
+const PROGRESS_GOAL = GOAL_DISTANCE + MOON_APPROACH
 
 const keys = {}
 
@@ -147,6 +158,8 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
+    moonActive: false,   // percurso concluído → Lua desce no topo
+    moon: null,          // { x, y, r, warp:{x,y,w,h,alive} }
   }
 }
 
@@ -167,6 +180,28 @@ function spawnWarp(s) {
   })
   s.warpSegment++
   s.nextWarpAt += WARP_INTERVAL
+}
+
+// Lua desce do topo carregando o portal de pouso (6º warp) no centro.
+function spawnMoon(s) {
+  s.moon = {
+    x: W / 2,
+    y: -MOON_R,
+    r: MOON_R,
+    warp: { x: W / 2 - MOON_WARP_W / 2, y: -MOON_R, w: MOON_WARP_W, h: MOON_WARP_H, alive: true },
+  }
+}
+
+function updateMoon(s, move) {
+  if (!s.moonActive) return
+  if (!s.moon) spawnMoon(s)
+  const mn = s.moon
+  mn.y += move
+  // portal acompanha o centro da Lua
+  mn.warp.x = mn.x - mn.warp.w / 2
+  mn.warp.y = mn.y - mn.warp.h / 2
+  // se a Lua passar sem ser acertada, volta pro topo (retry, sem soft-lock)
+  if (mn.y - mn.r > H) mn.y = -mn.r
 }
 
 // margens interpoladas na altura y
@@ -292,14 +327,10 @@ function update(dt, s) {
 
   while (s.distance >= s.nextWarpAt && s.warpSegment < 5) spawnWarp(s)
 
-  // vitória: chegou ao fim do percurso
-  if (s.distance >= GOAL_DISTANCE) {
-    s.distance = GOAL_DISTANCE
-    progressPct.value = 100
-    s.over = true
-    phase.value = 'won'
-    return
-  }
+  // fim do percurso → a Lua surge no topo; jogador precisa mirar no portal dela.
+  // distância continua contando (em sincronia com a Lua descendo) até o portal
+  // alcançar o player, quando a barra chega a 100%.
+  if (s.distance >= GOAL_DISTANCE) s.moonActive = true
 
   // rolagem do terreno + reciclagem
   let minY = Infinity
@@ -362,6 +393,9 @@ function update(dt, s) {
   for (const w of s.warps) w.y += move
   s.warps = s.warps.filter((w) => w.alive && w.y < H + 40)
 
+  // Lua-destino no topo (após concluir o percurso)
+  updateMoon(s, move)
+
   // tiros x inimigos
   for (const b of s.bullets) {
     for (const e of s.enemies) {
@@ -416,6 +450,14 @@ function update(dt, s) {
     }
   }
 
+  // colisão com o portal da Lua → clímax: pouso na Lua
+  if (s.moonActive && s.moon && s.moon.warp.alive && hit(p, s.moon.warp)) {
+    s.moon.warp.alive = false
+    s.over = true
+    enterMoon()
+    return
+  }
+
   // acabou o combustível
   if (s.fuel <= 0) { s.fuel = 0; killPlayer(s) }
 
@@ -426,7 +468,7 @@ function update(dt, s) {
   score.value = Math.floor(s.score)
   fuelPct.value = Math.max(0, Math.round((s.fuel / FUEL_MAX) * 100))
   speedLabel.value = (s.speed / BASE_SPEED).toFixed(1) + 'x'
-  progressPct.value = Math.min(100, (s.distance / GOAL_DISTANCE) * 100)
+  progressPct.value = Math.min(100, (s.distance / PROGRESS_GOAL) * 100)
 }
 
 // ---- Render ----
@@ -501,6 +543,25 @@ function draw(s) {
     ctx.fill()
   }
   ctx.globalAlpha = 1
+
+  // Lua-destino descendo no topo (mesma imagem da tela de pouso) + portal alvo
+  if (s.moonActive && s.moon) {
+    const mn = s.moon
+    drawMoon(ctx, mn.x, mn.y, mn.r)
+    if (mn.warp.alive) {
+      const pulse = 0.7 + 0.3 * Math.sin(s.time / 200)
+      ctx.save()
+      ctx.strokeStyle = '#9b7bff'
+      ctx.shadowColor = '#9b7bff'
+      ctx.shadowBlur = 12 + 10 * pulse
+      ctx.globalAlpha = 0.6 + 0.4 * pulse
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.arc(mn.x, mn.y, mn.warp.w / 2, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
 
   // warps laterais (setas coloridas)
   for (const w of s.warps) {
