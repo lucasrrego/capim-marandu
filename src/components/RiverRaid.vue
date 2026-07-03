@@ -7,15 +7,17 @@ import AbductionGame from './AbductionGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
+import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
 import { unlock as unlockAchievement } from '../data/achievements.js'
+import { slotKey, setSlot } from '../data/saves.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
 let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
 const score = ref(0)
@@ -80,12 +82,8 @@ const PLASMA_MIN_W = 10              // largura do feixe na carga mínima
 const PLASMA_MAX_W = 64              // largura do feixe na carga máxima
 const PLASMA_LEN = 260               // comprimento do feixe (px)
 
-// ---- Economia (moedas persistidas entre partidas) ----
-const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
-const BODY_KEY = 'capim-marandu:body'     // níveis de upgrade do corpo (persistem)
-const ENGINE_KEY = 'capim-marandu:engine' // níveis de upgrade do motor (persistem)
-const LOST_KEY = 'capim-marandu:lost'     // moedas perdidas somadas em todas as corridas
-const DEATHS_KEY = 'capim-marandu:deaths' // corridas perdidas (game over) somadas
+// ---- Economia (persistida por slot de save; ver saves.js → slotKey) ----
+// Todo progresso é gravado em capim-marandu:s<N>:<nome>, com N = slot ativo.
 // Recompensa de moedas por tipo destruído. Para novos vilões, basta
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
@@ -110,19 +108,48 @@ const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
 
-let lostTotal = 0     // moedas perdidas acumuladas (persistido em LOST_KEY)
-let deathsTotal = 0   // corridas perdidas acumuladas (persistido em DEATHS_KEY)
+// contadores acumulados, persistidos no slot ativo
+let lostTotal = 0      // moedas perdidas acumuladas
+let deathsTotal = 0    // corridas perdidas acumuladas
+let abductTotal = 0    // jogadores abduzidos acumulados
+let landTotal = 0      // pousos na Lua acumulados
+let installsTotal = 0  // modificações/melhorias instaladas no hangar
+let spentTotal = 0     // moedas gastas no total
 
 function loadBank() {
-  bank.value = Number(localStorage.getItem(COINS_KEY)) || 0
-  lostTotal = Number(localStorage.getItem(LOST_KEY)) || 0
-  deathsTotal = Number(localStorage.getItem(DEATHS_KEY)) || 0
+  bank.value = Number(localStorage.getItem(slotKey('coins'))) || 0
+  lostTotal = Number(localStorage.getItem(slotKey('lost'))) || 0
+  deathsTotal = Number(localStorage.getItem(slotKey('deaths'))) || 0
+  abductTotal = Number(localStorage.getItem(slotKey('abduct'))) || 0
+  landTotal = Number(localStorage.getItem(slotKey('land'))) || 0
+  installsTotal = Number(localStorage.getItem(slotKey('installs'))) || 0
+  spentTotal = Number(localStorage.getItem(slotKey('spent'))) || 0
+}
+
+// instalou peça/melhoria no hangar (custo em moedas) → conquistas
+function onInstall(cost) {
+  installsTotal += 1
+  localStorage.setItem(slotKey('installs'), String(installsTotal))
+  if (installsTotal >= 1) unlockAchievement('first-mod')
+  if (installsTotal >= 5) unlockAchievement('five-upgrades')
+  if (installsTotal >= 10) unlockAchievement('ten-upgrades')
+  spentTotal += cost
+  localStorage.setItem(slotKey('spent'), String(spentTotal))
+  if (spentTotal >= 5937) unlockAchievement('big-spender')
+}
+
+// abduziu um jogador no minigame → conquistas (team 'star' = NeySea)
+function onAbduct(team) {
+  abductTotal += 1
+  localStorage.setItem(slotKey('abduct'), String(abductTotal))
+  if (abductTotal >= 10) unlockAchievement('abductor')
+  if (team === 'star') unlockAchievement('abduct-neysea')
 }
 
 // perdeu a corrida (game over) → conta p/ conquista Teimoso
 function tallyLoss() {
   deathsTotal += 1
-  localStorage.setItem(DEATHS_KEY, String(deathsTotal))
+  localStorage.setItem(slotKey('deaths'), String(deathsTotal))
   if (deathsTotal >= 10) unlockAchievement('ten-deaths')
 }
 
@@ -130,12 +157,12 @@ function tallyLoss() {
 function settleRun(fraction) {
   runKept.value = Math.floor(runCoins.value * fraction)
   bank.value += runKept.value
-  localStorage.setItem(COINS_KEY, String(bank.value))
+  localStorage.setItem(slotKey('coins'), String(bank.value))
   // acumula moedas perdidas entre corridas → conquista Buraco Negro
   const lost = runCoins.value - runKept.value
   if (lost > 0) {
     lostTotal += lost
-    localStorage.setItem(LOST_KEY, String(lostTotal))
+    localStorage.setItem(slotKey('lost'), String(lostTotal))
     if (lostTotal >= 1000) unlockAchievement('coin-loser')
   }
 }
@@ -143,13 +170,13 @@ function settleRun(fraction) {
 // bônus avulso direto no banco (ex.: recompensa do pouso na Lua)
 function addCoins(n) {
   bank.value += n
-  localStorage.setItem(COINS_KEY, String(bank.value))
+  localStorage.setItem(slotKey('coins'), String(bank.value))
 }
 
-// carrega níveis salvos de uma trilha de upgrade em loadout[field]
-function loadUpgrade(key, field) {
+// carrega níveis salvos de uma trilha de upgrade (nome → loadout[field])
+function loadUpgrade(name, field) {
   try {
-    const saved = JSON.parse(localStorage.getItem(key) || 'null')
+    const saved = JSON.parse(localStorage.getItem(slotKey(name)) || 'null')
     if (saved && typeof saved === 'object') {
       hangarLoadout.value = {
         ...hangarLoadout.value,
@@ -160,14 +187,14 @@ function loadUpgrade(key, field) {
 }
 
 function loadUpgrades() {
-  loadUpgrade(BODY_KEY, 'body')
-  loadUpgrade(ENGINE_KEY, 'engineUp')
+  loadUpgrade('body', 'body')
+  loadUpgrade('engine', 'engineUp')
 }
 
-// persiste banco (gasto no hangar) e níveis de upgrade comprados
-watch(bank, (v) => localStorage.setItem(COINS_KEY, String(v)))
-watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(BODY_KEY, JSON.stringify(b)), { deep: true })
-watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(ENGINE_KEY, JSON.stringify(e)), { deep: true })
+// persiste banco (gasto no hangar) e níveis de upgrade comprados no slot ativo
+watch(bank, (v) => localStorage.setItem(slotKey('coins'), String(v)))
+watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(slotKey('body'), JSON.stringify(b)), { deep: true })
+watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(slotKey('engine'), JSON.stringify(e)), { deep: true })
 
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
@@ -930,14 +957,34 @@ function frame(ts) {
 }
 
 // ---- Controles ----
+function enterSaves() {
+  phase.value = 'saves'
+}
+
+// escolheu um slot: ativa, carrega o progresso dele e vai pro hangar
+function chooseSave(n) {
+  setSlot(n)
+  loadBank()
+  loadUpgrades()
+  enterHangar()
+}
+
 function enterHangar() {
   phase.value = 'hangar'
 }
 
-function enterMoon() {
+let moonFromStart = false   // true = teste pela tela inicial; false = pouso real da corrida
+
+function enterMoon(fromStart = false) {
+  moonFromStart = fromStart === true
   fuelPct.value = 100
   speedLabel.value = '0'
   phase.value = 'moon'
+}
+
+// sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
+function leaveMoon() {
+  phase.value = moonFromStart ? 'start' : 'hangar'
 }
 
 function playIntro() {
@@ -950,6 +997,9 @@ function onLanded() {
   unlockAchievement('first-landing')
   if (bank.value > 300) unlockAchievement('rich-landing')
   if (score.value > 2000) unlockAchievement('high-score')
+  landTotal += 1
+  localStorage.setItem(slotKey('land'), String(landTotal))
+  if (landTotal >= 10) unlockAchievement('ten-landings')
 }
 
 function startGame(loadout) {
@@ -1040,7 +1090,7 @@ function onKey(e, down) {
     else if (phase.value === 'over') enterHangar()
     else if (phase.value === 'hangar') startGame()
   }
-  if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements')) phase.value = 'start'
+  if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements' || phase.value === 'saves')) phase.value = 'start'
   if (k === 'escape' && down && (phase.value === 'playing' || phase.value === 'paused')) togglePause()
 }
 
@@ -1103,13 +1153,13 @@ onUnmounted(() => {
           @landed="onLanded"
           @fuel="fuelPct = $event"
           @speed="speedLabel = $event"
-          @exit="phase = 'start'"
+          @exit="leaveMoon"
         />
 
         <template v-else>
         <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-        <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
+        <IntroScreen v-if="phase === 'intro'" @done="enterSaves" />
 
         <StartScreen
           v-else-if="phase === 'start'"
@@ -1118,7 +1168,14 @@ onUnmounted(() => {
           @achievements="phase = 'achievements'"
           @minigame="openAbduction"
         />
-        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
+        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
+
+        <SaveScreen
+          v-else-if="phase === 'saves'"
+          class="rr-hangar"
+          @select="chooseSave"
+          @back="phase = 'start'"
+        />
 
         <AchievementsScreen
           v-else-if="phase === 'achievements'"
@@ -1132,6 +1189,7 @@ onUnmounted(() => {
           v-model:coins="bank"
           class="rr-hangar"
           @launch="startGame"
+          @install="onInstall"
           @back="phase = 'start'"
         />
 
@@ -1143,6 +1201,7 @@ onUnmounted(() => {
           :color="activeMinigame.color"
           :loadout="hangarLoadout"
           @earn="earnMinigame"
+          @abduct="onAbduct"
           @back="leaveMinigame"
         />
 

@@ -12,7 +12,7 @@ const props = defineProps({
   color: { type: String, default: '#37e0a0' },
   loadout: { type: Object, default: () => ({ ...DEFAULT_LOADOUT }) },
 })
-const emit = defineEmits(['earn', 'back'])
+const emit = defineEmits(['earn', 'back', 'abduct'])
 
 // ============================================================================
 //  CALIBRAÇÃO — mexa só aqui pra ajustar o jogo. Tudo em px/s e segundos.
@@ -236,6 +236,7 @@ function update(dt, s) {
         coinsRound.value += claw.grabbed.coins
         resume()
         playAbduct()
+        emit('abduct', claw.grabbed.team)               // conta p/ conquistas (team 'star' = NeySea)
         s.players.push(makePlayer(claw.grabbed.team))   // repõe o campo
         claw.grabbed = null
       }

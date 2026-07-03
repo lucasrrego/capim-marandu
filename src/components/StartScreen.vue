@@ -87,6 +87,9 @@ onUnmounted(() => {
       <canvas ref="guguCanvas" class="start-gugu" width="128" height="136"></canvas>
 
       <h1 class="start-title">GUGU</h1>
+      <p class="start-acronym">
+        <b>G</b>enoma <b>U</b>ltra <b>G</b>aláctico <b>Ú</b>nico
+      </p>
       <p class="start-subtitle">Rumo à Lua</p>
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
@@ -187,6 +190,18 @@ onUnmounted(() => {
     0 0 10px var(--px-purple, #9b7bff),
     0 0 22px rgba(155, 123, 255, 0.6),
     0 3px 0 #4a2f8f;
+}
+
+.start-acronym {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  color: #cfc7ee;
+  opacity: 0.85;
+}
+.start-acronym b {
+  color: var(--px-purple, #9b7bff);
+  text-shadow: 0 0 8px rgba(155, 123, 255, 0.6);
 }
 
 .start-subtitle {

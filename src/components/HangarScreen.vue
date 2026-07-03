@@ -12,7 +12,7 @@ import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
 const coins = defineModel('coins', { type: Number, default: 0 })
-const emit = defineEmits(['launch', 'back'])
+const emit = defineEmits(['launch', 'back', 'install'])
 
 const activeCategory = ref('wing')
 const previewCanvas = ref(null)
@@ -50,9 +50,15 @@ const statRows = computed(() => [
   { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
 
+const STATIC_COST = 30   // instalar uma peça (asa/bico/motor/arma) custa 30 moedas
+
 function selectPart(part) {
   if (partLocked(part)) return
+  if (loadout.value[activeCategory.value] === part.id) return   // já instalada: sem custo
+  if (coins.value < STATIC_COST) return                         // sem saldo
+  coins.value -= STATIC_COST
   loadout.value = { ...loadout.value, [activeCategory.value]: part.id }
+  emit('install', STATIC_COST)
 }
 
 function buyUpgrade(track) {
@@ -65,6 +71,7 @@ function buyUpgrade(track) {
   if (coins.value < cost) return
   coins.value -= cost
   loadout.value = { ...loadout.value, [store]: { ...cur, [track.key]: lvl + 1 } }
+  emit('install', cost)
 }
 
 function drawPreview(ts) {
@@ -147,12 +154,14 @@ onUnmounted(() => {
             <button
               class="part-card"
               :class="{ selected: loadout[activeCategory] === part.id, locked: partLocked(part) }"
-              :disabled="partLocked(part)"
+              :disabled="partLocked(part) || (loadout[activeCategory] !== part.id && coins < STATIC_COST)"
               @click="selectPart(part)"
             >
               <span class="part-name">
                 {{ part.name }}
                 <span v-if="partLocked(part)" class="part-lock">🔒</span>
+                <span v-else-if="loadout[activeCategory] === part.id" class="part-tag">INSTALADA</span>
+                <span v-else class="part-cost">🪙 {{ STATIC_COST }}</span>
               </span>
               <span class="part-desc">
                 {{ part.desc }}
@@ -462,6 +471,23 @@ onUnmounted(() => {
 }
 .part-lock {
   font-size: 0.75rem;
+}
+.part-cost {
+  float: right;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: var(--px-gold, #ffd24d);
+}
+.part-tag {
+  float: right;
+  font-size: 0.6rem;
+  font-weight: bold;
+  color: var(--accent, #aa3bff);
+  letter-spacing: 0.05em;
+}
+.part-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .upgrade-card.locked {
