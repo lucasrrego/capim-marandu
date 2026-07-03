@@ -22,12 +22,15 @@ export const PALETTE = {
   o: '#ff8a1a',       // laranja
   b: '#6cc6ff',       // azul (vidro / lágrima)
   W: '#d5f0ff',       // azul claro
+  // metal / neutros
+  a: '#b8bcc8',       // cinza metálico (= --px-gray)
   // pessoas (minigame da abdução)
   s: '#e8b48c',       // pele
   n: '#3a2418',       // cabelo / contorno escuro / chuteira
   j: '#3a7bff',       // azul do Japão
   J: '#1f4fd0',       // azul do Japão (sombra)
   p: '#8e44ad',       // vestido roxo da Vó Baiana
+  L: '#e6c15f',       // cabelo loiro
 }
 
 /** Desenha um sprite (array de strings) no contexto 2D. */
@@ -120,6 +123,34 @@ export const GUGU = {
     '...ddd....ddd...',
   ],
 }
+
+// ---- Objetos voadores (inimigos) ----------------------------------------
+// Mesmo padrão dos sprites do Gugu: string-map, 1 char = 1 pixel.
+
+// Sonda/satélite da NASA: corpo central + painéis solares + antena. 15x8.
+export const SATELLITE = [
+  '.......y.......',
+  '.......a.......',
+  'kkkk.aaaaa.kkkk',
+  'kbWk.awwwa.kWbk',
+  'kbbkawrrrwakbbk',
+  'kWbk.awbwa.kbWk',
+  'kkkk.aaaaa.kkkk',
+  '......aya......',
+]
+
+// Tralha espacial: sucata metálica com faixa de perigo e rebites. 10x9.
+export const SPACE_JUNK = [
+  '..kkkkk...',
+  '.kaaaaak..',
+  'kaawwaaak.',
+  'kayyyyyak.',
+  'kakkkkkak.',
+  'kaaaaaaakk',
+  '.kaoaaoak.',
+  '.kkaaaakk.',
+  '...kkkk...',
+]
 
 // ---- Logos de marcas (pixel art) para os outdoors da Lua ----------------
 // Cada logo tem sua própria paleta e um bg opcional (fundo do painel).
@@ -272,4 +303,23 @@ export const VO_BAIANA = [
   '.pppwwwwwwwwppp.',
   '.pppppppppppppp.',
   '.pp.pppppppp.pp.',
+]
+
+// Repórter loira gritando (busto): cabelo loiro (L), pele (s), olhos (k),
+// boca aberta (r/k), camisa do Brasil (y) com gola azul (j). Grade 13.
+export const BLONDE_WOMAN = [
+  '....LLLLL....',
+  '..LLLLLLLLL..',
+  '.LLLLLLLLLLL.',
+  '.LLsssssssLL.',
+  '.LLsssssssLL.',
+  '.LLsksssksLL.',
+  '.LLsssssssLL.',
+  '.LLssrrrssLL.',
+  '.LLssrkrssLL.',
+  '.LLsssssssLL.',
+  '.LLLsssssLLL.',
+  '.yyyyyyyyyyy.',
+  '.yyjjjjjjjyy.',
+  '.yyyyyyyyyyy.',
 ]

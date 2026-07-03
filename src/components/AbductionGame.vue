@@ -2,10 +2,10 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import {
   drawSprite, spriteSize,
-  PLAYER_BR, PLAYER_JP, PLAYER_STAR, VO_BAIANA,
+  PLAYER_BR, PLAYER_JP, PLAYER_STAR, VO_BAIANA, BLONDE_WOMAN,
 } from '../data/pixelSprites.js'
 import { DEFAULT_LOADOUT, drawShip as drawHangarShip } from '../data/shipParts.js'
-import { resume, playClaw, playAbduct, playDodge } from '../audio/sfx.js'
+import { resume, playClaw, playAbduct, playAbductStar, playDodge } from '../audio/sfx.js'
 
 const props = defineProps({
   segment: { type: Number, default: 1 },
@@ -29,7 +29,7 @@ const TUNING = {
     holdTimeS: 0.5,      // tempo com a bola antes de passar de novo
     radius: 6,           // raio da bola
   },
-  round: { durationS: 30 },              // duração da rodada
+  round: { durationS: 15 },              // duração da rodada
   // A recompensa de cada jogador comum é proporcional à sua velocidade sorteada:
   //   coins = max(1, round(speed * coinsPerSpeed))  → mais rápido = mais moedas.
   players: {
@@ -122,6 +122,7 @@ function newGame() {
     claw: { x: W / 2, tipY: CLAW_REST_Y, state: 'ready', grabbed: null },
     ball: { x: W / 2, target: null, hold: 0 },
     time: 0,
+    neyBubble: 0,   // ms restantes do balão "Levanta menino ney"
   }
   pickBallTarget(s)
   return s
@@ -148,6 +149,7 @@ function playerHeight() { return BR.h }   // molde igual pra todos
 
 function update(dt, s) {
   s.time += dt
+  if (s.neyBubble > 0) s.neyBubble -= dt * 1000
 
   timeLeft.value -= dt
   if (timeLeft.value <= 0) {
@@ -235,7 +237,10 @@ function update(dt, s) {
       if (claw.grabbed) {
         coinsRound.value += claw.grabbed.coins
         resume()
-        playAbduct()
+        if (claw.grabbed.team === 'star') {
+          playAbductStar()       // craque (Neymar): som especial
+          s.neyBubble = 2200     // balão pixelado "Levanta menino ney"
+        } else playAbduct()
         emit('abduct', claw.grabbed.team)               // conta p/ conquistas (team 'star' = NeySea)
         s.players.push(makePlayer(claw.grabbed.team))   // repõe o campo
         claw.grabbed = null
@@ -305,6 +310,56 @@ function drawClaw(s) {
   }
 }
 
+// repórter loira + balão pixelado no topo (aparece ao abduzir o craque)
+function drawNeyBubble(s) {
+  if (!s.neyBubble || s.neyBubble <= 0) return
+  ctx.save()
+  ctx.globalAlpha = Math.min(1, s.neyBubble / 300)   // fade nos últimos 300ms
+
+  // repórter loira gritando, abaixo do HUD do tempo (senão cobre o cronômetro)
+  const scale = 4
+  const wx = 8, wy = 52
+  drawSprite(ctx, wx, wy, BLONDE_WOMAN, scale)
+  const womanW = BLONDE_WOMAN[0].length * scale
+
+  // balão à direita dela, com o rabinho apontando pra ela
+  const lines = ['LEVANTA MENINO', 'NEY!']
+  const fs = 11, lineH = 16, padX = 12, padY = 10
+  ctx.font = `${fs}px "Press Start 2P", monospace`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  let maxW = 0
+  for (const ln of lines) maxW = Math.max(maxW, ctx.measureText(ln).width)
+  const bw = Math.ceil(maxW) + padX * 2
+  const bh = lines.length * lineH + padY * 2
+  let bx = wx + womanW + 12
+  const by = wy + 8
+  if (bx + bw > W - 6) bx = W - 6 - bw
+  // sombra
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'
+  ctx.fillRect(bx + 3, by + 4, bw, bh)
+  // fundo
+  ctx.fillStyle = '#f4f4f4'
+  ctx.fillRect(bx, by, bw, bh)
+  // rabinho à esquerda, apontando pra mulher (blocos)
+  const ty = Math.round(by + bh / 2)
+  ctx.fillRect(bx - 4, ty - 5, 4, 10)
+  ctx.fillRect(bx - 8, ty - 3, 4, 6)
+  ctx.fillRect(bx - 11, ty - 2, 3, 4)
+  // borda pixel (2px, 4 lados)
+  ctx.fillStyle = '#12131a'
+  ctx.fillRect(bx, by, bw, 2)
+  ctx.fillRect(bx, by + bh - 2, bw, 2)
+  ctx.fillRect(bx, by, 2, bh)
+  ctx.fillRect(bx + bw - 2, by, 2, bh)
+  // texto
+  lines.forEach((ln, i) => ctx.fillText(ln, bx + padX, by + padY + i * lineH))
+
+  ctx.restore()
+  ctx.textAlign = 'start'
+  ctx.textBaseline = 'alphabetic'
+}
+
 function draw(s) {
   // céu noturno
   const g = ctx.createLinearGradient(0, 0, 0, H)
@@ -336,6 +391,7 @@ function draw(s) {
 
   drawClaw(s)
   drawShip(s)
+  drawNeyBubble(s)
 }
 
 function frame(ts) {
