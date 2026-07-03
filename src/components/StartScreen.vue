@@ -4,7 +4,7 @@ import { drawSprite, GUGU } from '../data/pixelSprites.js'
 import { playConfirm, playSelect, playSparkle, startTheme, stopTheme } from '../audio/sfx.js'
 
 defineProps({ dev: { type: Boolean, default: false } })
-const emit = defineEmits(['play', 'minigame'])
+const emit = defineEmits(['play', 'minigame', 'orbital'])
 
 const guguCanvas = ref(null)
 const GUGU_SCALE = 8
@@ -29,6 +29,12 @@ function openMinigame() {
   armAudio()
   playConfirm()
   emit('minigame')
+}
+
+function openOrbital() {
+  armAudio()
+  playConfirm()
+  emit('orbital')
 }
 
 function onKey(e) {
@@ -95,6 +101,7 @@ onUnmounted(() => {
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
       <button v-if="dev" class="start-btn start-btn-mini" @click="openMinigame" @pointerenter="playSelect">🛸 Sonho da Vó Baiana</button>
+      <button v-if="dev" class="start-btn start-btn-mini" @click="openOrbital" @pointerenter="playSelect">🛰 Defesa Orbital</button>
     </div>
   </div>
 </template>
