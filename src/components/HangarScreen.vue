@@ -3,11 +3,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   PART_CATEGORIES,
   SHIP_PARTS,
+  BODY_TRACKS,
+  ENGINE_TRACKS,
   buildShipStats,
   drawShip,
 } from '../data/shipParts.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
+const coins = defineModel('coins', { type: Number, default: 0 })
 const emit = defineEmits(['launch', 'back'])
 
 const activeCategory = ref('wing')
@@ -16,20 +19,44 @@ const previewCanvas = ref(null)
 let raf = 0
 let previewTime = 0
 
-const activeParts = computed(() => SHIP_PARTS[activeCategory.value])
+// Trilhas de upgrade incremental por categoria (peça salva em loadout[storeKey]).
+const UPGRADE_TRACKS = { body: BODY_TRACKS, engine: ENGINE_TRACKS }
+const UPGRADE_STORE = { body: 'body', engine: 'engineUp' }
+const UPGRADE_DEFAULTS = { fuel: 0, shield: 0, save: 0, speed: 0 }
+
+const activeParts = computed(() => SHIP_PARTS[activeCategory.value] ?? [])
 const stats = computed(() => buildShipStats(loadout.value))
+
+const upgradeTracks = computed(() => UPGRADE_TRACKS[activeCategory.value] ?? [])
+const upgradeStore = computed(() => UPGRADE_STORE[activeCategory.value])
+const levels = computed(() => ({
+  ...UPGRADE_DEFAULTS,
+  ...(loadout.value[upgradeStore.value] ?? {}),
+}))
 
 const statRows = computed(() => [
   { label: 'Vidas', value: String(stats.value.startLives) },
+  { label: 'Escudo', value: String(stats.value.shield) },
+  { label: 'Tanque', value: String(stats.value.fuelMax) },
+  { label: 'Moedas perdida', value: Math.round((1 - stats.value.deathKeep) * 100) + '%' },
   { label: 'Agilidade', value: stats.value.agility.toFixed(2) + 'x' },
-  { label: 'Blindagem', value: stats.value.armor.toFixed(2) + 'x' },
-  { label: 'Consumo', value: stats.value.fuelUse.toFixed(2) + 'x' },
   { label: 'Vel. máx', value: stats.value.maxSpeedMul.toFixed(2) + 'x' },
   { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
 
 function selectPart(id) {
   loadout.value = { ...loadout.value, [activeCategory.value]: id }
+}
+
+function buyUpgrade(track) {
+  const store = upgradeStore.value
+  const cur = { ...UPGRADE_DEFAULTS, ...(loadout.value[store] ?? {}) }
+  const lvl = cur[track.key] ?? 0
+  if (lvl >= track.max) return
+  const cost = track.cost(lvl)
+  if (coins.value < cost) return
+  coins.value -= cost
+  loadout.value = { ...loadout.value, [store]: { ...cur, [track.key]: lvl + 1 } }
 }
 
 function drawPreview(ts) {
@@ -82,6 +109,7 @@ onUnmounted(() => {
 
     <header class="hangar-header">
       <span class="hangar-badge">CONSTRUTOR</span>
+      <span class="hangar-coins">🪙 {{ coins }}</span>
       <h2>Monte sua nave</h2>
     </header>
 
@@ -106,7 +134,7 @@ onUnmounted(() => {
           </button>
         </nav>
 
-        <ul class="hangar-parts">
+        <ul v-if="activeCategory !== 'body'" class="hangar-parts">
           <li v-for="part in activeParts" :key="part.id">
             <button
               class="part-card"
@@ -118,6 +146,31 @@ onUnmounted(() => {
             </button>
           </li>
         </ul>
+
+        <div v-if="upgradeTracks.length" class="hangar-upgrades">
+          <div v-for="track in upgradeTracks" :key="track.key" class="upgrade-card">
+            <div class="upgrade-head">
+              <span class="part-name">{{ track.label }}</span>
+              <span class="upgrade-pips">
+                <span
+                  v-for="n in track.max"
+                  :key="n"
+                  class="pip"
+                  :class="{ on: levels[track.key] >= n }"
+                ></span>
+              </span>
+            </div>
+            <span class="part-desc">{{ track.desc }}</span>
+            <button
+              class="upgrade-buy"
+              :disabled="levels[track.key] >= track.max || coins < track.cost(levels[track.key])"
+              @click="buyUpgrade(track)"
+            >
+              <template v-if="levels[track.key] >= track.max">MÁX</template>
+              <template v-else>Melhorar · 🪙 {{ track.cost(levels[track.key]) }}</template>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -183,6 +236,76 @@ onUnmounted(() => {
   margin: 6px 0 0;
   font-size: 1.3rem;
   color: #fff;
+}
+
+.hangar-coins {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: #ffd24d;
+  text-shadow: 0 0 8px rgba(255, 207, 58, 0.5);
+}
+
+.hangar-upgrades {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.upgrade-card {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.upgrade-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.upgrade-pips {
+  display: flex;
+  gap: 4px;
+}
+
+.pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.pip.on {
+  background: var(--accent, #aa3bff);
+  border-color: var(--accent, #aa3bff);
+  box-shadow: 0 0 6px rgba(170, 59, 255, 0.6);
+}
+
+.upgrade-buy {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(170, 59, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(170, 59, 255, 0.15);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.upgrade-buy:hover:not(:disabled) { filter: brightness(1.2); }
+.upgrade-buy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .hangar-layout {
