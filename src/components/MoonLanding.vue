@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { DEFAULT_LOADOUT, drawShip } from '../data/shipParts.js'
+import { drawLogo, LOGOS } from '../data/pixelSprites.js'
 
 // Clímax do jogo: pousar na Lua.
 //  - VERTICAL: SEGURA ↑/Espaço pra frear (gasta combustível; no ritmo = freio extra),
@@ -49,19 +50,16 @@ const GROUND_Y = H - 70      // topo do solo
 // ---- Times Square da Lua (Elon comprou e encheu de outdoor) ----
 // Paleta neon do design system (--px-*).
 const NEON = ['#9b7bff', '#6cc6ff', '#d0392e', '#ffd24d', '#6fcf5b', '#ff8a1a', '#ff6ea8']
-// Propagandas: marcas cafonas + história do Gugu/ET Bilu.
+// Propagandas: marcas reais têm logo em pixel art; o resto é texto.
+//   { logo } → desenha o sprite da marca (com bg opcional)
+//   { text, bg?, colors? } → texto (colors: cor por linha)
 const ADS = [
-  ['VAI DE', 'BET'],
-  ['STAR', 'BUCKS'],
-  ['CAPIM'],
-  ['SEU AD', 'AQUI'],
-  ['FOGUETES', 'DO GUGU'],
-  ['WIFI', 'GRATIS'],
-  ['ET BILU', 'AQUI'],
-  ['TERNO', 'BRILHANTE'],
-  ['LUA by', 'ELON'],
-  ['COMPRE', 'DOGE'],
-  ['MARTE', '-50%'],
+  { text: ['sporting', 'bet'], bg: '#12386e', colors: ['#f4f4f4', '#ff3b30'] }, // SportingBet
+  { logo: 'starbucks' },
+  { logo: 'dg' },                                                                // Dolce & Gabbana
+  { logo: 'capim' },
+  { text: ['SEU AD', 'AQUI'] },
+
 ]
 // Cores das janelas acesas
 const WINDOW_ON = ['#6cc6ff', '#37e0a0', '#ffe27a']
@@ -299,27 +297,42 @@ function drawCity(s) {
     // janelas em grade
     drawWindows(s, b, top, 8, false)
 
-    // letreiro neon só em alguns prédios
+    // letreiro só em alguns prédios (logo de marca ou texto)
     if (b.hasSign) {
       const ad = ADS[(adBase + b.i) % ADS.length]
-      const maxLen = ad.reduce((m, l) => Math.max(m, l.length), 1)
       const sw = b.w - 8
-      const fontPx = clamp(Math.floor((sw - 4) / maxLen), 5, 9)
-      const lh = fontPx + 3
-      const sh = ad.length * lh + 8
       const sx = b.x + 4, sy = top + 6
-      ctx.fillStyle = '#04040a'
-      ctx.fillRect(sx, sy, sw, sh)
-      ctx.strokeStyle = b.color
-      ctx.lineWidth = 2
-      ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2)
-      ctx.save()
-      ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip()
-      ctx.fillStyle = b.color
-      ctx.font = `${fontPx}px "Press Start 2P", monospace`
-      const ty = sy + 4 + fontPx
-      for (let li = 0; li < ad.length; li++) ctx.fillText(ad[li], sx + sw / 2, ty + li * lh)
-      ctx.restore()
+
+      if (ad.logo) {
+        const sh = clamp(Math.round(b.h * 0.55), 26, 52)
+        const lg = LOGOS[ad.logo]
+        ctx.fillStyle = lg?.bg || '#04040a'
+        ctx.fillRect(sx, sy, sw, sh)
+        ctx.strokeStyle = b.color
+        ctx.lineWidth = 2
+        ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2)
+        drawLogo(ctx, ad.logo, sx, sy, sw, sh)
+      } else {
+        const lines = ad.text
+        const maxLen = lines.reduce((m, l) => Math.max(m, l.length), 1)
+        const fontPx = clamp(Math.floor((sw - 4) / maxLen), 5, 9)
+        const lh = fontPx + 3
+        const sh = lines.length * lh + 8
+        ctx.fillStyle = ad.bg || '#04040a'
+        ctx.fillRect(sx, sy, sw, sh)
+        ctx.strokeStyle = b.color
+        ctx.lineWidth = 2
+        ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2)
+        ctx.save()
+        ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip()
+        ctx.font = `${fontPx}px "Press Start 2P", monospace`
+        const ty = sy + 4 + fontPx
+        for (let li = 0; li < lines.length; li++) {
+          ctx.fillStyle = (ad.colors && ad.colors[li]) || b.color
+          ctx.fillText(lines[li], sx + sw / 2, ty + li * lh)
+        }
+        ctx.restore()
+      }
     }
   }
   ctx.textAlign = 'start'
