@@ -1,10 +1,13 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import { drawSprite, GUGU } from '../data/pixelSprites.js'
+import { resume, startTheme, stopTheme } from '../audio/sfx.js'
 
 const emit = defineEmits(['done'])
 
 const crawl = ref(null)
 const inner = ref(null)
+const guguCanvas = ref(null)
 
 // ---- Animação do crawl (rAF, para permitir acelerar) ----
 const BASE_DUR = 42          // segundos para percorrer tudo em velocidade normal
@@ -20,7 +23,7 @@ let done = false
 function finish() {
   if (done) return
   done = true
-  stopMusic()
+  stopTheme()
   emit('done')
 }
 
@@ -45,74 +48,10 @@ function loop(ts) {
 const onDown = (e) => { pressed.add(e.key) }
 const onUp = (e) => { pressed.delete(e.key) }
 
-// ---- Música chiptune (Web Audio, sem arquivos) ----
-let audioCtx = null
-let musicTimer = 0
-
-function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12) }
-
-const LEAD = [
-  69, 72, 76, 72, 81, 76, 72, 76,
-  67, 71, 74, 71, 79, 74, 71, 74,
-  65, 69, 72, 69, 77, 72, 69, 72,
-  64, 68, 71, 76, 71, 68, 71, 68,
-]
-const BASS = [
-  45, null, null, null, 45, null, null, null,
-  43, null, null, null, 43, null, null, null,
-  41, null, null, null, 41, null, null, null,
-  40, null, null, null, 40, null, null, null,
-]
-const STEP = 0.15
-
-function startMusic() {
-  if (audioCtx) return
-  const AC = window.AudioContext || window.webkitAudioContext
-  if (!AC) return
-  audioCtx = new AC()
-
-  const master = audioCtx.createGain()
-  master.gain.value = 0.16
-  master.connect(audioCtx.destination)
-
-  const playNote = (freq, time, dur, type, gain) => {
-    const o = audioCtx.createOscillator()
-    const g = audioCtx.createGain()
-    o.type = type
-    o.frequency.value = freq
-    o.connect(g)
-    g.connect(master)
-    g.gain.setValueAtTime(0.0001, time)
-    g.gain.exponentialRampToValueAtTime(gain, time + 0.012)
-    g.gain.exponentialRampToValueAtTime(0.0001, time + dur)
-    o.start(time)
-    o.stop(time + dur + 0.03)
-  }
-
-  const startTime = audioCtx.currentTime + 0.1
-  let nextStep = 0
-  const scheduler = () => {
-    if (!audioCtx) return
-    while (startTime + nextStep * STEP < audioCtx.currentTime + 0.2) {
-      const t = startTime + nextStep * STEP
-      const lead = LEAD[nextStep % LEAD.length]
-      if (lead) playNote(midiToFreq(lead), t, STEP * 1.6, 'square', 0.45)
-      const bass = BASS[nextStep % BASS.length]
-      if (bass) playNote(midiToFreq(bass), t, STEP * 3.2, 'triangle', 0.55)
-      nextStep++
-    }
-  }
-  scheduler()
-  musicTimer = setInterval(scheduler, 60)
-}
-
-function stopMusic() {
-  if (musicTimer) { clearInterval(musicTimer); musicTimer = 0 }
-  if (audioCtx) { audioCtx.close(); audioCtx = null }
-}
-
 onMounted(() => {
-  startMusic()               // vem de um clique no botão Jogar, então já é permitido
+  const ctx = guguCanvas.value.getContext('2d')
+  drawSprite(ctx, 0, 0, GUGU.idle, 4)   // Gugu soldando o foguete
+  startTheme()                          // vem de um gesto na tela inicial
   window.addEventListener('keydown', onDown)
   window.addEventListener('keyup', onUp)
   raf = requestAnimationFrame(loop)
@@ -122,12 +61,12 @@ onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', onDown)
   window.removeEventListener('keyup', onUp)
-  stopMusic()
+  stopTheme()
 })
 </script>
 
 <template>
-  <div class="intro" @pointerdown="startMusic">
+  <div class="intro" @pointerdown="resume">
     <div class="intro-sky"></div>
     <div class="intro-stars"></div>
     <div class="intro-moon">
@@ -164,8 +103,9 @@ onUnmounted(() => {
       </svg>
     </div>
 
-    <!-- ET consertando o foguete (pixel art animado) -->
+    <!-- Gugu consertando o foguete (sprite pixel + foguete/solda em SVG) -->
     <div class="intro-scene">
+      <canvas ref="guguCanvas" class="intro-gugu" width="64" height="68"></canvas>
       <svg viewBox="0 0 40 40" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
         <!-- foguete -->
         <g>
@@ -188,29 +128,8 @@ onUnmounted(() => {
           <rect x="24" y="30" width="6" height="3" fill="#7a1f18" />
         </g>
 
-        <!-- ET -->
+        <!-- maçarico do Gugu (vibra ao soldar) -->
         <g>
-          <!-- cabeça -->
-          <rect x="6" y="15" width="9" height="9" fill="#6fcf5b" />
-          <rect x="12" y="15" width="3" height="9" fill="#3fa03a" />
-          <!-- olhos -->
-          <rect x="7" y="18" width="3" height="2" fill="#12131a" />
-          <rect x="11" y="18" width="3" height="2" fill="#12131a" />
-          <rect x="8" y="18" width="1" height="1" fill="#ffffff" />
-          <rect x="12" y="18" width="1" height="1" fill="#ffffff" />
-          <!-- corpo -->
-          <rect x="8" y="24" width="6" height="6" fill="#6fcf5b" />
-          <rect x="12" y="24" width="2" height="6" fill="#3fa03a" />
-          <!-- pernas -->
-          <rect x="8" y="30" width="2" height="3" fill="#3fa03a" />
-          <rect x="12" y="30" width="2" height="3" fill="#3fa03a" />
-          <rect x="8" y="33" width="3" height="1" fill="#2b7a28" />
-          <rect x="11" y="33" width="3" height="1" fill="#2b7a28" />
-        </g>
-
-        <!-- braço + maçarico (vibra ao soldar) -->
-        <g>
-          <rect x="13" y="24" width="6" height="2" fill="#6fcf5b" />
           <rect x="18" y="24" width="2" height="2" fill="#444851" />
           <rect x="20" y="24" width="3" height="1" fill="#8b8f99" />
           <animateTransform attributeName="transform" type="translate"
@@ -239,11 +158,9 @@ onUnmounted(() => {
 
     <div ref="crawl" class="intro-crawl">
       <div ref="inner" class="intro-crawl-inner">
-        <p>Num planeta pequeno e desconhecido, perdido no fim do universo, vivia um ET sonhador.</p>
-        <p>Ele tinha ouvido falar de um planeta distante chamado Terra — o mais bonito de toda a galáxia.</p>
-        <p>Desde então, seu maior sonho era um só: chegar à Lua da Terra e, lá do alto, contemplar a melhor vista que existe.</p>
-        <p>Mas o caminho até as estrelas é traiçoeiro. Asteroides, meteoros e o combustível escasso separam o herói do seu destino.</p>
-        <p>Ligue os motores. A jornada começa agora.</p>
+        <p>Num planeta esquecido no fim do universo vivia Gugu, filho do lendário pensador ET Bilu — o único alienígena que um dia viajou à Terra e voltou pra contar.</p>
+        <p>Das histórias do pai, Gugu nunca esqueceu um apresentador de terno brilhante que ria alto e dava prêmios. Cresceu genial como o velho ET Bilu, mas vivia de queixo caído: qualquer novidade o deixava vislumbrado.</p>
+        <p>Seu sonho é um só: chegar à Lua da Terra e ver de pertinho o planeta mais bonito da galáxia. O caminho é traiçoeiro — asteroides, meteoros e combustível contado. Ligue os motores. A jornada começa agora.</p>
       </div>
     </div>
 
@@ -309,7 +226,7 @@ onUnmounted(() => {
   image-rendering: pixelated;
 }
 
-/* ET consertando o foguete */
+/* Gugu consertando o foguete */
 .intro-scene {
   position: absolute;
   left: 14px;
@@ -319,9 +236,21 @@ onUnmounted(() => {
   filter: drop-shadow(0 0 10px rgba(255, 210, 90, 0.25));
 }
 .intro-scene svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
+}
+.intro-gugu {
+  position: absolute;
+  left: 6px;
+  bottom: 8px;
+  width: 60px;
+  height: auto;
+  image-rendering: pixelated;
+  z-index: 1;
+  filter: drop-shadow(0 0 8px rgba(111, 207, 91, 0.3));
 }
 
 /* crawl em perspectiva */

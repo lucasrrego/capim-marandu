@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import IntroScreen from './IntroScreen.vue'
+import StartScreen from './StartScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -765,12 +766,7 @@ onUnmounted(() => {
 
         <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
 
-        <div v-else-if="phase === 'start'" class="rr-overlay">
-          <h2>River Raid</h2>
-          <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
-          <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-          <button @click="playIntro">▶ Jogar</button>
-        </div>
+        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" />
 
         <HangarScreen
           v-else-if="phase === 'hangar'"
@@ -790,18 +786,20 @@ onUnmounted(() => {
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">
           <h2>Pausado</h2>
+          <p>Respira, Gugu.</p>
           <button @click="togglePause">▶ Continuar</button>
         </div>
 
         <div v-else-if="phase === 'over'" class="rr-overlay">
           <h2>Fim de jogo</h2>
+          <p>Foi mal, pai... quase lá.</p>
           <p>Pontuação: <b>{{ score }}</b></p>
-          <button @click="enterHangar">↻ Jogar de novo</button>
+          <button @click="enterHangar">↻ Tentar de novo</button>
         </div>
 
         <div v-else-if="phase === 'won'" class="rr-overlay">
-          <h2>🏆 Você venceu!</h2>
-          <p>Chegou ao fim do percurso.</p>
+          <h2>A LUA! 🌙</h2>
+          <p>Gugu conseguiu! Que vista, hein?</p>
           <p>Pontuação: <b>{{ score }}</b></p>
           <button @click="enterHangar">↻ Jogar de novo</button>
         </div>
@@ -813,7 +811,7 @@ onUnmounted(() => {
       </div>
 
       <aside class="rr-panel">
-        <h1 class="rr-title">River Raid</h1>
+        <h1 class="rr-title">GUGU</h1>
 
         <div class="rr-stat">
           <span class="rr-stat-label">Pontos</span>
@@ -900,13 +898,14 @@ onUnmounted(() => {
 
 .rr-title {
   margin: 0 0 2px;
-  font-size: 2rem;
-  font-weight: 900;
-  line-height: 0.98;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 1.4rem;
+  font-weight: 400;
+  line-height: 1.1;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #fff;
-  text-shadow: 0 0 12px var(--hud-glow), 0 0 2px #fff;
+  text-shadow: 0 0 12px var(--hud-glow), 0 3px 0 #4a2f8f;
 }
 
 .rr-stat {
@@ -1037,7 +1036,13 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 20px;
 }
-.rr-overlay h2 { margin: 0; font-size: 1.8rem; }
+.rr-overlay h2 {
+  margin: 0;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 1.2rem;
+  line-height: 1.4;
+  text-shadow: 0 0 12px var(--hud-glow), 0 3px 0 #4a2f8f;
+}
 .rr-overlay p { margin: 0; line-height: 1.5; }
 .rr-keys { font-size: 0.8rem; opacity: 0.8; }
 .rr-overlay button, .rr-touch button {
@@ -1088,8 +1093,8 @@ onUnmounted(() => {
   .rr-title {
     width: 100%;
     text-align: center;
-    font-size: 1.4rem;
-    line-height: 1;
+    font-size: 1.1rem;
+    line-height: 1.1;
     margin: 0;
   }
   .rr-stat-value { font-size: 1.5rem; }
