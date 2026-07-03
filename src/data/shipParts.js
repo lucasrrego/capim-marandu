@@ -30,7 +30,11 @@ export const SHIP_PARTS = {
 }
 
 // Corpo = trilhas de upgrade incrementais compradas com moedas.
-// cost(lvl) = custo em moedas para subir de `lvl` para `lvl+1`.
+// cost(lvl) = custo pra subir de `lvl` para `lvl+1`. Fica bem mais caro a cada
+// nível: base * 4^lvl (o 1º é barato, os próximos disparam).
+const COST_FACTOR = 4
+const tierCost = (base) => (lvl) => Math.round(base * Math.pow(COST_FACTOR, lvl))
+
 export const BODY_COLOR = '#b8bcc8'
 export const BODY_TRACKS = [
   {
@@ -39,7 +43,7 @@ export const BODY_TRACKS = [
     desc: '+combustível máximo por nível',
     max: 5,
     fuelPerLevel: 20,
-    cost: (lvl) => 3 + lvl * 2,
+    cost: tierCost(3),
     lockedBy: 'fuel-destroyer',
   },
   {
@@ -47,7 +51,7 @@ export const BODY_TRACKS = [
     label: 'Escudo',
     desc: 'Anula 1 impacto por nível',
     max: 3,
-    cost: (lvl) => 6 + lvl * 4,
+    cost: tierCost(50),
     lockedBy: 'ten-deaths',
   },
   {
@@ -55,7 +59,7 @@ export const BODY_TRACKS = [
     label: 'Cofre',
     desc: '-5% de perda de moedas ao morrer',
     max: 10,
-    cost: (lvl) => 4 + lvl * 2,
+    cost: tierCost(4),
     lockedBy: 'coin-loser',
   },
 ]
@@ -75,7 +79,7 @@ export const ENGINE_TRACKS = [
     label: 'Turbina',
     desc: '+velocidade máxima por nível',
     max: 3,
-    cost: (lvl) => 4 + lvl * 3,
+    cost: tierCost(25),
   },
 ]
 
