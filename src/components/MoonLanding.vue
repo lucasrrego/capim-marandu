@@ -2,11 +2,12 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { DEFAULT_LOADOUT, drawShip } from '../data/shipParts.js'
 
-// Clímax do jogo: pousar na Lua — só a DESCIDA.
-//  - Barra vertical verde (direita) = faixa de velocidade de descida segura; encolhe perto do chão.
-//  - SEGURA ↑/Espaço pra frear (empuxo contínuo, gasta combustível). No ritmo = freio extra.
-//  - SEGURA ↓ pra descer mais rápido.
-//  - No chão: velocidade dentro da faixa = pouso; fora = explode.
+// Clímax do jogo: pousar na Lua.
+//  - VERTICAL: SEGURA ↑/Espaço pra frear (gasta combustível; no ritmo = freio extra),
+//    ↓ pra descer mais rápido. Barra verde (direita) = faixa de velocidade segura.
+//  - LATERAL: ← / → movem a nave. Precisa pousar sobre a PLATAFORMA.
+//  - No chão, pouso OK exige: velocidade na faixa + nave sobre a plataforma + sem
+//    impacto lateral. Fora de qualquer um → explode.
 // HUD (vida/pontos/moedas/combustível) fica no componente pai — aqui só emitimos fuel/speed.
 
 const props = defineProps({
@@ -34,6 +35,16 @@ const VY_METER = 120         // topo da escala do medidor
 const BEAT_MS = 760          // período da batida
 const BEAT_WIN = 0.16        // janela de acerto (fração do ciclo)
 
+// ---- Controle lateral / plataforma (tunáveis) ----
+const SHIP_W = 32            // largura desenhada da nave
+const SHIP_H = 40
+const MOVE_ACCEL = 320       // aceleração lateral ao segurar ← / → (px/s²)
+const VX_DAMP = 1.9          // atrito lateral (por segundo)
+const MAX_VX = 150           // velocidade lateral máxima
+const VX_SAFE = 28           // |vx| máximo no toque (senão tomba de lado)
+const PAD_W = 84             // largura da plataforma de pouso
+const GROUND_Y = H - 70      // topo do solo
+
 // Faixa segura de velocidade em função do progresso (0 = topo, 1 = chão).
 // Encolhe de [2, 96] no alto até [2, 40] no chão (verde amplo).
 function safeBand(prog) {
@@ -51,23 +62,31 @@ let ctx = null
 let raf = 0
 let last = 0
 let state = null
-const held = { up: false, down: false }
+const held = { up: false, down: false, left: false, right: false }
 
 function rand(a, b) { return a + Math.random() * (b - a) }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
 
 function newState() {
   const craters = []
   for (let i = 0; i < 7; i++) craters.push({ x: rand(30, W - 60), r: rand(10, 26) })
   const stars = []
   for (let i = 0; i < 80; i++) stars.push({ x: rand(0, W), y: rand(0, H * 0.75), r: rand(0.4, 1.6), a: rand(0.2, 0.8) })
+  // plataforma longe do centro pra obrigar deslocamento lateral
+  const margin = PAD_W / 2 + 24
+  let padCx = rand(margin, W - margin)
+  if (Math.abs(padCx - W / 2) < 90) padCx = padCx < W / 2 ? margin : W - margin
   return {
     alt: START_ALT,
     vy: START_VY,
+    x: W / 2,          // posição horizontal (centro da nave)
+    vx: 0,             // velocidade lateral
     fuel: FUEL_MAX,
     clock: 0,          // relógio interno (ms) pro ritmo
     flamePulse: 0,     // ms de chama forte (empuxo ativo)
     beatFlash: 0,      // ms do flash de acerto
     boom: 0,           // raio da explosão (crash)
+    pad: { cx: padCx, w: PAD_W },
     craters, stars,
   }
 }
@@ -89,12 +108,25 @@ function begin() {
 
 function touchdown(s) {
   const { lo, hi } = safeBand(1)
-  if (s.vy >= lo && s.vy <= hi) {
+  const shipL = s.x - SHIP_W / 2
+  const shipR = s.x + SHIP_W / 2
+  const padL = s.pad.cx - s.pad.w / 2
+  const padR = s.pad.cx + s.pad.w / 2
+  const onPad = shipL >= padL && shipR <= padR
+  const vyOk = s.vy >= lo && s.vy <= hi
+  const vxOk = Math.abs(s.vx) <= VX_SAFE
+
+  if (onPad && vyOk && vxOk) {
     const coins = 15
     result.value = { coins }
     stage.value = 'landed'
     emit('reward', coins)
   } else {
+    result.value = {
+      reason: !onPad ? 'Pousou fora da plataforma.'
+        : !vyOk ? 'Velocidade de descida alta demais.'
+        : 'Impacto lateral — freie o deslize antes de tocar.',
+    }
     s.boom = 1
     stage.value = 'crashed'
   }
@@ -121,6 +153,16 @@ function update(dt, s) {
 
     s.vy = Math.max(VY_MIN, Math.min(VY_METER, s.vy))
     s.alt -= s.vy * dt
+
+    // lateral: ← / → com inércia e atrito
+    let ax = 0
+    if (held.left) ax -= MOVE_ACCEL
+    if (held.right) ax += MOVE_ACCEL
+    s.vx += ax * dt
+    s.vx -= s.vx * VX_DAMP * dt
+    s.vx = clamp(s.vx, -MAX_VX, MAX_VX)
+    s.x = clamp(s.x + s.vx * dt, SHIP_W / 2, W - SHIP_W / 2)
+
     emit('fuel', Math.round(s.fuel))
     emit('speed', String(Math.round(s.vy)))
     if (s.alt <= 0) { s.alt = 0; touchdown(s) }
@@ -168,7 +210,7 @@ function draw(s) {
   }
   ctx.globalAlpha = 1
 
-  const groundY = H - 70
+  const groundY = GROUND_Y
   ctx.fillStyle = '#c9c6d6'
   ctx.fillRect(0, groundY, W, H - groundY)
   ctx.fillStyle = '#b3b0c4'
@@ -176,16 +218,43 @@ function draw(s) {
     ctx.beginPath(); ctx.arc(c.x, groundY + 18, c.r, Math.PI, 0); ctx.fill()
   }
 
+  // plataforma de pouso
+  const pad = s.pad
+  const padL = pad.cx - pad.w / 2
+  ctx.fillStyle = '#37e0a0'
+  ctx.fillRect(padL, groundY - 6, pad.w, 7)
+  // faixas de sinalização
+  ctx.fillStyle = '#0a0713'
+  for (let i = 0; i < 5; i++) ctx.fillRect(padL + 6 + i * (pad.w - 12) / 5, groundY - 5, 4, 5)
+  // beacons piscando nas pontas
+  const blink = Math.sin(s.clock / 200) > 0
+  ctx.fillStyle = blink ? '#ffe14d' : '#5a4d80'
+  for (const bx of [padL, padL + pad.w]) {
+    ctx.beginPath(); ctx.arc(bx, groundY - 8, 3, 0, Math.PI * 2); ctx.fill()
+  }
+
   const t = 1 - Math.min(1, s.alt / START_ALT)
   const shipY = 60 + t * (groundY - 130)
+
+  // guia vertical de alinhamento (fica verde quando a nave está sobre a plataforma)
+  if (stage.value === 'descent') {
+    const aligned = (s.x - SHIP_W / 2) >= padL && (s.x + SHIP_W / 2) <= padL + pad.w
+    ctx.save()
+    ctx.setLineDash([4, 6])
+    ctx.strokeStyle = aligned ? 'rgba(55,224,160,0.7)' : 'rgba(155,123,255,0.35)'
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.moveTo(pad.cx, shipY + SHIP_H); ctx.lineTo(pad.cx, groundY - 6); ctx.stroke()
+    ctx.restore()
+  }
+
   if (stage.value === 'crashed') {
-    const cx = W / 2, cy = groundY - 20
+    const cx = s.x, cy = groundY - 20
     ctx.fillStyle = '#ff8a1a'
     ctx.beginPath(); ctx.arc(cx, cy, s.boom, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = '#ffe14d'
     ctx.beginPath(); ctx.arc(cx, cy, s.boom * 0.6, 0, Math.PI * 2); ctx.fill()
   } else {
-    drawShip(ctx, W / 2 - 16, shipY, 32, 40, props.loadout, s.flamePulse > 0 ? 300 : 0)
+    drawShip(ctx, s.x - SHIP_W / 2, shipY, SHIP_W, SHIP_H, props.loadout, s.flamePulse > 0 ? 300 : 0)
   }
 
   if (stage.value === 'descent') {
@@ -217,12 +286,16 @@ function onDown(e) {
   const k = e.key.toLowerCase()
   if (k === ' ' || k === 'arrowup' || k === 'w') { e.preventDefault(); held.up = true }
   if (k === 'arrowdown' || k === 's') { e.preventDefault(); held.down = true }
+  if (k === 'arrowleft' || k === 'a') { e.preventDefault(); held.left = true }
+  if (k === 'arrowright' || k === 'd') { e.preventDefault(); held.right = true }
   if (k === 'escape') emit('exit')
 }
 function onUp(e) {
   const k = e.key.toLowerCase()
   if (k === ' ' || k === 'arrowup' || k === 'w') held.up = false
   if (k === 'arrowdown' || k === 's') held.down = false
+  if (k === 'arrowleft' || k === 'a') held.left = false
+  if (k === 'arrowright' || k === 'd') held.right = false
 }
 
 onMounted(() => {
@@ -245,9 +318,9 @@ onUnmounted(() => {
 
   <div v-if="stage === 'intro'" class="ml-overlay">
     <h2>🌙 Pouso na Lua</h2>
-    <p><b>Segure ↑ / Espaço</b> pra frear a descida.<br>
-       Mantenha o marcador na <b>faixa verde</b> — ela encolhe perto do chão.</p>
-    <p class="ml-keys">↑ / Espaço = frear · ↓ = descer mais rápido · Esc = sair</p>
+    <p><b>Segure ↑ / Espaço</b> pra frear a descida e <b>← / →</b> pra alinhar.<br>
+       Pouse sobre a <b>plataforma</b> com o marcador na <b>faixa verde</b>.</p>
+    <p class="ml-keys">↑/Espaço = frear · ↓ = acelerar · ← → = mover · Esc = sair</p>
     <button @click="begin">▶ Iniciar descida</button>
   </div>
 
@@ -259,7 +332,7 @@ onUnmounted(() => {
 
   <div v-else-if="stage === 'crashed'" class="ml-overlay">
     <h2>💥 Explodiu!</h2>
-    <p>Velocidade alta demais no toque.<br>Segure ↑ pra frear até a faixa verde.</p>
+    <p>{{ result?.reason }}</p>
     <button @click="begin">↻ Tentar de novo</button>
   </div>
 </template>
