@@ -8,6 +8,8 @@ import BossBattle from './BossBattle.vue'
 import BattleTransition from './BattleTransition.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
+import MoonApproach from './MoonApproach.vue'
+import FinalCutscene from './FinalCutscene.vue'
 import MinigamesMenu from './MinigamesMenu.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
 import SaveScreen from './SaveScreen.vue'
@@ -25,7 +27,7 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'minigames' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'moon' | 'achievements' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'minigames' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'approach' | 'moon' | 'ending' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
 let minigameFromStart = false        // true quando o minigame foi aberto pelo menu (teste, sem corrida)
 let bossFromMenu = false             // true quando o chefe foi aberto pelo menu de mini-games
@@ -1059,7 +1061,8 @@ function enterMoon(fromStart = false) {
   moonFromStart = fromStart === true
   fuelPct.value = 100
   speedLabel.value = '0'
-  phase.value = 'moon'
+  // cutscene de aproximação primeiro; ela emite @done → pouso ('moon')
+  phase.value = 'approach'
 }
 
 // bateu no pouso = corrida encerrada (mesmo com vidas sobrando)
@@ -1080,7 +1083,7 @@ function playIntro() {
   phase.value = 'intro'
 }
 
-// pousou na Lua = concluiu o jogo → conquistas
+// pousou na Lua = concluiu o jogo → cut scene final (plot twist) → conquistas/vitória
 // (o @reward do pouso já somou no banco antes deste handler)
 function onLanded() {
   unlockAchievement('first-landing')
@@ -1089,6 +1092,7 @@ function onLanded() {
   landTotal += 1
   localStorage.setItem(slotKey('land'), String(landTotal))
   if (landTotal >= 10) unlockAchievement('ten-landings')
+  phase.value = 'ending'   // vai direto pra cena de diálogo (pula o overlay do pouso)
 }
 
 function startGame(payload) {
@@ -1324,6 +1328,10 @@ onUnmounted(() => {
 
         <IntroScreen v-if="phase === 'intro'" @done="enterSaves" />
 
+        <MoonApproach v-else-if="phase === 'approach'" @done="phase = 'moon'" />
+
+        <FinalCutscene v-else-if="phase === 'ending'" @done="phase = 'won'" />
+
         <StartScreen
           v-else-if="phase === 'start'"
           class="rr-hangar"
@@ -1403,7 +1411,8 @@ onUnmounted(() => {
 
         <div v-else-if="phase === 'won'" class="rr-overlay">
           <h2>A LUA! 🌙</h2>
-          <p>Gugu conseguiu! Que vista, hein?</p>
+          <p>A vista cobrava pedágio... mas a viagem foi de graça.</p>
+          <p><i>"Busquem conhecimento." — ET Bilu</i></p>
           <p>Pontuação: <b>{{ score }}</b></p>
           <p class="rr-loot">🪙 guardou <b>{{ runKept }}</b> no banco</p>
           <button @click="enterHangar">↻ Jogar de novo</button>

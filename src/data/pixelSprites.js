@@ -124,6 +124,58 @@ export const GUGU = {
   ],
 }
 
+// ---- ET Bilu (pai do Gugu — memória distante na cut scene final) --------
+// O lendário pensador: mesmo molde do Gugu, mas com sobrancelha marcada e
+// barba branca de sábio. Desenhado bem transparente, como uma lembrança.
+
+export const ET_BILU = [
+  '.......yy.......',
+  '.......dd.......',
+  '....dddddddd....',
+  '...dggggggggd...',
+  '...dgGGGGGGgd...',
+  '...dgkkggkkgd...',
+  '...dggwggwggd...',
+  '...dggggggggd...',
+  '...dgwwwwwwgd...',
+  '...dgwwwwwwgd...',
+  '......dwwd......',
+  '...dggggggggd...',
+  '..gdggggggggdg..',
+  '...dggggggggd...',
+  '...dggggggggd...',
+  '...dgg....ggd...',
+  '...ddd....ddd...',
+]
+
+// ---- Guardinha da Lua (cut scene final) ---------------------------------
+// Fiscal do estacionamento lunar: quepe azul com pala, óculos escuros,
+// distintivo dourado, luvas brancas e coturno. Grade 16 (igual ao Gugu),
+// pra ficar lado a lado nas cenas de diálogo.
+
+export const GUARD = {
+  // parado, cara de poucos amigos (boca reta/emburrada)
+  idle: [
+    '....jjjjjjjj....',
+    '...jjjjjjjjjj...',
+    '...JJJJJJJJJJ...',
+    '....ssssssss....',
+    '...skkkkkkkks...',
+    '...ssssssssss...',
+    '...sssrrrrsss...',
+    '....ssssssss....',
+    '...jjjjjjjjjj...',
+    '..wjjjjyyjjjjw..',
+    '..wjjjjjjjjjjw..',
+    '...jjjjjjjjjj...',
+    '...jjjjjjjjjj...',
+    '...nnnnnnnnnn...',
+    '...jjjj..jjjj...',
+    '...jjjj..jjjj...',
+    '...nnnn..nnnn...',
+  ],
+}
+
 // ---- Objetos voadores (inimigos) ----------------------------------------
 // Mesmo padrão dos sprites do Gugu: string-map, 1 char = 1 pixel.
 
