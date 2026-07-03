@@ -14,6 +14,7 @@ const lives = ref(3)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
 const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
+const coins = ref(0)
 
 const canvas = ref(null)
 let ctx = null
@@ -34,9 +35,24 @@ const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
 const RESPAWN_DELAY = 1000           // ms de explosão antes de renascer
 const GOLD_DUR = 450                 // ms de brilho dourado ao pegar combustível
 
+// ---- Economia (moedas persistidas entre partidas) ----
+const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
+// Recompensa de moedas por tipo destruído. Para novos vilões, basta
+// adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
+const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
+const DEFAULT_COIN_REWARD = 1
+
 const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
+
+function loadCoins() {
+  coins.value = Number(localStorage.getItem(COINS_KEY)) || 0
+}
+function addCoins(n) {
+  coins.value += n
+  localStorage.setItem(COINS_KEY, String(coins.value))
+}
 
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
@@ -303,6 +319,7 @@ function update(dt, s) {
         e.alive = false
         b.y = -999
         s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
+        addCoins(COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD)
       }
     }
   }
@@ -618,6 +635,7 @@ function holdFire(v) {
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
+  loadCoins()
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
   raf = requestAnimationFrame(frame)
@@ -639,6 +657,7 @@ onUnmounted(() => {
       <span>PONTOS <b>{{ score }}</b></span>
       <span>VIDAS <b>{{ '❤️'.repeat(lives) || '—' }}</b></span>
       <span>VEL <b>{{ speedLabel }}</b></span>
+      <span>MOEDAS <b>🪙 {{ coins }}</b></span>
     </div>
 
     <div class="rr-fuel">
