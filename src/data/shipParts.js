@@ -140,119 +140,142 @@ export function buildShipStats(loadout) {
   }
 }
 
+// --- foguete em pixel art ---
+// grade 13 col x 16 linhas; cada célula vira um bloco. Legenda:
+//   B corpo · H realce · S sombra · O contorno · N bico/trim · F aleta
+//   G vidro da escotilha · L brilho do vidro · E bocal
+const SHIP_GRID_W = 13
+const SHIP_GRID_H = 16
+
+// topo do foguete (linhas 0-3) varia conforme o formato do bico
+const NOSE_TOPS = {
+  cone: ['......N......', '......N......', '.....NNN.....', '....NNNNN....'],
+  needle: ['......N......', '......N......', '......N......', '.....NNN.....'],
+  blunt: ['....NNNNN....', '....NNNNN....', '....NNNNN....', '...NNNNNNN...'],
+}
+
+// corpo do foguete (linhas 4-15), independente do bico
+const SHIP_BODY = [
+  '....BHBSB....',
+  '...BHBBBSB...',
+  '...BBGGGBB...',
+  '...BBGLGBB...',
+  '...BBGGGBB...',
+  '..BBHBBBSBB..',
+  '.FBBBBBBBBBF.',
+  'FFBBBBBBBBBFF',
+  'FFBHBBBBSBBFF',
+  '..OBBBBBBBO..',
+  '...OSBBBSO...',
+  '....EEEEE....',
+]
+
+// clareia (amt>0) ou escurece (amt<0) uma cor hex
+function shadeHex(hex, amt) {
+  const n = parseInt(hex.slice(1), 16)
+  let r = (n >> 16) & 255
+  let g = (n >> 8) & 255
+  let b = n & 255
+  if (amt >= 0) {
+    r += (255 - r) * amt
+    g += (255 - g) * amt
+    b += (255 - b) * amt
+  } else {
+    const k = 1 + amt
+    r *= k
+    g *= k
+    b *= k
+  }
+  return `rgb(${r | 0}, ${g | 0}, ${b | 0})`
+}
+
 export function drawShip(ctx, x, y, w, h, loadout, time = 0, opts = {}) {
   const parts = resolveLoadout(loadout)
-  const cx = x + w / 2
-  const top = y
-  const bw = w * (parts.nose.shape === 'blunt' ? 0.31 : 0.27)
   const gold = opts.goldTint ?? 0
 
   const bodyColor = gold > 0 ? '#ffd34d' : parts.body.color
-  const trimColor = gold > 0 ? '#e0a020' : parts.nose.tipColor
+  const trimColor = gold > 0 ? '#f0b840' : parts.nose.tipColor
   const finColor = gold > 0 ? '#e0a020' : parts.wing.wingColor
 
-  // chama (animada, atrás do foguete)
-  const fl = (8 + (Math.floor(time / 70) % 3) * 4) * (h / 32) * parts.engine.power
-  const flameW = w * 0.38 * Math.min(1.4, parts.engine.power)
-  ctx.fillStyle = parts.engine.flameColor
-  ctx.beginPath()
-  ctx.moveTo(cx - flameW / 2, top + h - h * 0.06)
-  ctx.lineTo(cx + flameW / 2, top + h - h * 0.06)
-  ctx.lineTo(cx, top + h + fl)
-  ctx.closePath()
-  ctx.fill()
-  ctx.fillStyle = '#ffe14d'
-  ctx.beginPath()
-  ctx.moveTo(cx - flameW * 0.33, top + h - h * 0.06)
-  ctx.lineTo(cx + flameW * 0.33, top + h - h * 0.06)
-  ctx.lineTo(cx, top + h + fl * 0.55)
-  ctx.closePath()
-  ctx.fill()
+  const colors = {
+    B: bodyColor,
+    H: shadeHex(bodyColor, 0.28),
+    S: shadeHex(bodyColor, -0.26),
+    O: shadeHex(bodyColor, -0.55),
+    N: trimColor,
+    F: finColor,
+    G: '#1a6fb0',
+    L: '#8fd0f5',
+    E: '#4a4a52',
+  }
+
+  const pxW = w / SHIP_GRID_W
+  const pxH = h / SHIP_GRID_H
+  // desenha uma célula da grade como bloco, encaixando nas bordas de pixel
+  const px = (c, r, color) => {
+    const x0 = Math.round(x + c * pxW)
+    const x1 = Math.round(x + (c + 1) * pxW)
+    const y0 = Math.round(y + r * pxH)
+    const y1 = Math.round(y + (r + 1) * pxH)
+    ctx.fillStyle = color
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+  }
+
+  // chama (atrás, abaixo do bocal — linhas >= 16), animada e escalada pela potência
+  const power = parts.engine.power ?? 1
+  const flick = Math.floor(time / 70) % 3
+  const flameColor = parts.engine.flameColor
+  const flameLen = Math.max(2, Math.round((2 + flick) * power))
+  for (let r = 0; r < flameLen; r++) {
+    const half = Math.max(0, Math.round((1 - r / flameLen) * 2))
+    for (let c = 6 - half; c <= 6 + half; c++) px(c, SHIP_GRID_H + r, flameColor)
+  }
+  const coreLen = Math.max(1, Math.floor(flameLen * 0.65))
+  for (let r = 0; r < coreLen; r++) {
+    const half = Math.max(0, Math.round((1 - r / coreLen) * 1))
+    for (let c = 6 - half; c <= 6 + half; c++) px(c, SHIP_GRID_H + r, '#ffe14d')
+  }
   if (parts.engine.id === 'after') {
-    ctx.fillStyle = '#fff59d'
-    ctx.beginPath()
-    ctx.moveTo(cx - w * 0.08, top + h + fl * 0.35)
-    ctx.lineTo(cx + w * 0.08, top + h + fl * 0.35)
-    ctx.lineTo(cx, top + h + fl * 1.15)
-    ctx.closePath()
-    ctx.fill()
+    for (let r = 0; r < flameLen + 2; r++) {
+      px(6, SHIP_GRID_H + r, r > (flameLen + 2) * 0.5 ? '#fff59d' : '#ffe14d')
+    }
   }
 
-  // aletas
-  const finBase = parts.wing.id === 'delta' ? 0.15 : 0.23
-  const finExt = w * finBase * (parts.wing.wingW ?? 1)
-  const finDrop = h * (parts.wing.id === 'wide' ? 0.42 : 0.375)
-  ctx.fillStyle = finColor
-  ctx.beginPath()
-  ctx.moveTo(cx - bw, top + h - finDrop)
-  ctx.lineTo(cx - bw - finExt, top + h - h * 0.03)
-  ctx.lineTo(cx - bw, top + h - h * 0.09)
-  ctx.closePath()
-  ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(cx + bw, top + h - finDrop)
-  ctx.lineTo(cx + bw + finExt, top + h - h * 0.03)
-  ctx.lineTo(cx + bw, top + h - h * 0.09)
-  ctx.closePath()
-  ctx.fill()
+  // monta a grade: topo do bico + corpo
+  const nose = NOSE_TOPS[parts.nose.shape] ?? NOSE_TOPS.cone
+  const grid = nose.concat(SHIP_BODY).map((row) => row.split(''))
 
-  // corpo
-  const bodyTop = top + h * 0.28 + (parts.nose.length ?? 0) * (h / 32)
-  ctx.fillStyle = bodyColor
-  ctx.fillRect(cx - bw, bodyTop, bw * 2, h - bodyTop + top - h * 0.125)
-
-  // bico
-  ctx.fillStyle = trimColor
-  if (parts.nose.shape === 'needle') {
-    ctx.beginPath()
-    ctx.moveTo(cx, top - h * 0.12)
-    ctx.lineTo(cx - bw * 0.55, bodyTop)
-    ctx.lineTo(cx + bw * 0.55, bodyTop)
-    ctx.closePath()
-    ctx.fill()
-  } else if (parts.nose.shape === 'blunt') {
-    ctx.fillRect(cx - bw, bodyTop - h * 0.06, bw * 2, h * 0.08)
-    ctx.beginPath()
-    ctx.moveTo(cx, top)
-    ctx.lineTo(cx - bw, bodyTop)
-    ctx.lineTo(cx + bw, bodyTop)
-    ctx.closePath()
-    ctx.fill()
-  } else {
-    ctx.beginPath()
-    ctx.moveTo(cx, top)
-    ctx.lineTo(cx - bw, bodyTop)
-    ctx.lineTo(cx + bw, bodyTop)
-    ctx.closePath()
-    ctx.fill()
+  // ajustes de aleta conforme a asa
+  if (parts.wing.id === 'wide') {
+    grid[9][1] = 'F'
+    grid[9][11] = 'F'
+    grid[13][1] = 'F'
+    grid[13][11] = 'F'
+  } else if (parts.wing.id === 'delta') {
+    grid[11][0] = '.'
+    grid[11][12] = '.'
+    grid[12][0] = '.'
+    grid[12][12] = '.'
+    grid[9][1] = 'F'
+    grid[9][11] = 'F'
   }
 
-  // escotilha
-  ctx.fillStyle = '#1a6fb0'
-  ctx.beginPath()
-  ctx.arc(cx, top + h * 0.53, w * 0.13, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#8fd0f5'
-  ctx.beginPath()
-  ctx.arc(cx - w * 0.04, top + h * 0.5, w * 0.05, 0, Math.PI * 2)
-  ctx.fill()
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r]
+    for (let c = 0; c < row.length; c++) {
+      const color = colors[row[c]]
+      if (color) px(c, r, color)
+    }
+  }
 
-  // bocal
-  ctx.fillStyle = '#555'
-  ctx.fillRect(cx - w * 0.15, top + h - h * 0.125, w * 0.3, h * 0.094)
-
-  // arma
-  ctx.fillStyle = parts.weapon.bulletColor
-  if (parts.weapon.id === 'cannon') {
-    ctx.fillRect(cx - w * 0.08, bodyTop - h * 0.06, w * 0.15, h * 0.25)
-  } else if (parts.weapon.id === 'rapid') {
-    ctx.fillRect(cx - bw - w * 0.04, bodyTop + h * 0.08, w * 0.12, h * 0.19)
-    ctx.fillRect(cx + bw - w * 0.08, bodyTop + h * 0.08, w * 0.12, h * 0.19)
+  // detalhe da arma na cor do projétil
+  const bc = parts.weapon.bulletColor
+  if (parts.weapon.id === 'rapid') {
+    px(1, 10, bc)
+    px(11, 10, bc)
+  } else if (parts.weapon.id === 'plasma') {
+    px(6, 4, bc)
   } else {
-    ctx.beginPath()
-    ctx.arc(cx, bodyTop + h * 0.12, w * 0.19, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.fillRect(cx - w * 0.04, bodyTop + h * 0.03, w * 0.08, h * 0.19)
+    px(6, 3, bc)
   }
 }

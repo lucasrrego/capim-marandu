@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MinigameScreen from './MinigameScreen.vue'
+import IntroScreen from './IntroScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -9,7 +10,7 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
@@ -748,6 +749,10 @@ function enterHangar() {
   phase.value = 'hangar'
 }
 
+function playIntro() {
+  phase.value = 'intro'
+}
+
 function startGame(loadout) {
   const config = { ...DEFAULT_LOADOUT, ...(loadout ?? hangarLoadout.value) }
   shipLoadout = config
@@ -797,7 +802,8 @@ function onKey(e, down) {
   if (k === ' ' && down && phase.value === 'playing') fire(state)
   if (k === 'p' && down) togglePause()
   if (k === 'enter' && down) {
-    if (phase.value === 'start' || phase.value === 'over') enterHangar()
+    if (phase.value === 'start') playIntro()
+    else if (phase.value === 'over') enterHangar()
     else if (phase.value === 'hangar') startGame()
   }
   if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
@@ -843,11 +849,13 @@ onUnmounted(() => {
       <div class="rr-stage">
         <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-        <div v-if="phase === 'start'" class="rr-overlay">
+        <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
+
+        <div v-else-if="phase === 'start'" class="rr-overlay">
           <h2>River Raid</h2>
           <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
           <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-          <button @click="enterHangar">▶ Jogar</button>
+          <button @click="playIntro">▶ Jogar</button>
         </div>
 
         <HangarScreen
