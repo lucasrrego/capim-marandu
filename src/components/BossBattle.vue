@@ -4,6 +4,12 @@
 // perseguem o jogador. O jogador (a nave montada) atira pra cima até zerar o HP.
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { buildShipStats, drawShip } from '../data/shipParts.js'
+import { startBossMusic, stopMusic } from '../audio/sfx.js'
+import { drawSprite, spriteSize, MAGNATA } from '../data/pixelSprites.js'
+import BattleTransition from './BattleTransition.vue'
+
+// ordem do magnata pra nave-chefe (aparece no balão da cutscene)
+const ORDER = 'Ei, robô! DESTRÓI esse foguetinho AGORA — vai ser TREMENDO! O melhor abate de todos os tempos, acredite!'
 
 const props = defineProps({
   loadout: { type: Object, required: true },
@@ -25,6 +31,7 @@ const BOMB_CD = 1500           // ms entre lançamentos de mini-bombas
 const ENEMY_BULLET_SPD = 210
 const BOMB_SPD = 150
 const BOMB_HOMING = 1.4        // quão forte a bomba corrige rumo ao player
+const BOMB_LIFE = 5            // s até a mini-bomba sumir se não acertar
 const PLAYER_SPD = 250
 const HIT_INVULN = 900         // ms de invuln após levar dano
 const REWARD = 60              // moedas ao vencer
@@ -37,6 +44,9 @@ const MAX_HP = props.short ? 12 : BOSS_HP   // teste: chefe morre rápido
 const PW = 30
 const PH = 36
 
+const stage = ref('intro')     // 'intro' (cutscene do magnata) | 'fight'
+const transitioning = ref(false)  // máscara entre a cutscene e a batalha
+const villainCanvas = ref(null)
 const bossHpPct = ref(100)
 const playerHp = ref(3 + stats.shield)
 const result = ref(null)       // null | 'win' | 'lose'
@@ -109,7 +119,7 @@ function launchBombs() {
   const b = s.boss
   const n = 1 + Math.floor(rand(0, 2))   // 1 ou 2 bombas
   for (let i = 0; i < n; i++) {
-    s.bombs.push({ x: b.x + rand(-30, 30), y: BOSS_Y + BOSS_H / 2, w: 12, h: 12, vx: rand(-40, 40), vy: BOMB_SPD * 0.6 })
+    s.bombs.push({ x: b.x + rand(-30, 30), y: BOSS_Y + BOSS_H / 2, w: 12, h: 12, vx: rand(-40, 40), vy: BOMB_SPD * 0.6, t: BOMB_LIFE })
   }
 }
 
@@ -142,9 +152,11 @@ function update(dt) {
   p.y = Math.max(H * 0.45, Math.min(H - PH - 8, p.y))
   if (p.invuln > 0) p.invuln -= dt * 1000
 
-  // auto-fogo
+  // fogo: corrida normal exige apertar (espaço / ponteiro); teste dispara sozinho
+  const firing = props.short || keys.fire || pointerX != null
   p.fireCd -= dt * 1000
-  if (p.fireCd <= 0) { firePlayer(); p.fireCd = stats.fireCd }
+  if (firing && p.fireCd <= 0) { firePlayer(); p.fireCd = stats.fireCd }
+  else if (!firing && p.fireCd < 0) p.fireCd = 0   // pronto pra atirar no próximo toque
 
   // move projéteis
   for (const bl of s.bullets) bl.y -= 520 * dt
@@ -165,8 +177,9 @@ function update(dt) {
     bo.vy = (bo.vy / sp) * BOMB_SPD
     bo.x += bo.vx * dt
     bo.y += bo.vy * dt
+    bo.t -= dt
   }
-  s.bombs = s.bombs.filter((bo) => bo.y < H + 30 && bo.y > -30)
+  s.bombs = s.bombs.filter((bo) => bo.t > 0 && bo.y < H + 30 && bo.y > -30)
 
   updateParticles(dt)
 
@@ -212,11 +225,13 @@ function updateParticles(dt) {
 
 function win() {
   result.value = 'win'
+  stopMusic()   // encerra a tensão
   boom(s.boss.x, BOSS_Y, '#ffcf3a', 40)
   boom(s.boss.x, BOSS_Y, '#ff5230', 40)
 }
 function lose() {
   result.value = 'lose'
+  stopMusic()
 }
 
 // ---- Render -------------------------------------------------------------
@@ -314,6 +329,7 @@ function onKey(e, down) {
   if (k === 'arrowright' || k === 'd') keys.right = down
   if (k === 'arrowup' || k === 'w') keys.up = down
   if (k === 'arrowdown' || k === 's') keys.down = down
+  if (k === ' ') keys.fire = down
 }
 const kd = (e) => onKey(e, true)
 const ku = (e) => onKey(e, false)
@@ -329,18 +345,37 @@ function finish() {
   else emit('failed')
 }
 
-onMounted(() => {
+// clique em "Encarar" → máscara de transição → começa a batalha
+function toFight() {
+  transitioning.value = true
+}
+
+// começa a batalha depois da cutscene do magnata (chamado ao cobrir a máscara)
+function startFight() {
+  stage.value = 'fight'
   ctx = canvas.value.getContext('2d')
   s = newState()
   emit('hp', playerHp.value)   // valor inicial pra barra lateral
+  last = 0
+  startBossMusic()   // trilha tensa de chefão (começa junto com a luta)
+  raf = requestAnimationFrame(frame)
+}
+
+onMounted(() => {
+  // desenha o magnata pixelado na cutscene
+  const vctx = villainCanvas.value.getContext('2d')
+  const scale = 9
+  const size = spriteSize(MAGNATA, scale)
+  drawSprite(vctx, (villainCanvas.value.width - size.w) / 2, 6, MAGNATA, scale)
+  emit('hp', playerHp.value)   // já mostra as vidas da batalha na barra lateral
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
-  raf = requestAnimationFrame(frame)
 })
 onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', kd)
   window.removeEventListener('keyup', ku)
+  stopMusic()
 })
 </script>
 
@@ -357,10 +392,26 @@ onUnmounted(() => {
       @pointerleave="onPointer($event, false)"
     ></canvas>
 
-    <div class="boss-hud">
+    <div v-if="stage === 'fight'" class="boss-hud">
       <span class="boss-label">CHEFE</span>
       <div class="boss-bar"><div class="boss-bar-fill" :style="{ width: bossHpPct + '%' }"></div></div>
     </div>
+
+    <!-- Cutscene: o magnata mandando a nave atacar -->
+    <div v-if="stage === 'intro'" class="boss-cut">
+      <div class="boss-cut-sky"></div>
+      <canvas ref="villainCanvas" width="150" height="160" class="boss-villain"></canvas>
+      <div class="boss-bubble">
+        <p>{{ ORDER }}</p>
+        <button class="boss-cut-btn" @click="toFight">⚔️ Encarar</button>
+      </div>
+    </div>
+
+    <BattleTransition
+      v-if="transitioning"
+      @covered="startFight"
+      @done="transitioning = false"
+    />
 
     <div v-if="result === 'win'" class="boss-overlay">
       <h2>🔥 Chefe destruído!</h2>
@@ -390,6 +441,76 @@ onUnmounted(() => {
   height: 100%;
   display: block;
 }
+
+.boss-cut {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.boss-cut-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(90% 60% at 50% 0%, rgba(210, 77, 255, 0.25), transparent 60%),
+    linear-gradient(180deg, #1a0f2e 0%, #0a0716 100%);
+}
+.boss-villain {
+  position: relative;
+  z-index: 1;
+  image-rendering: pixelated;
+  width: 150px;
+  height: auto;
+  filter: drop-shadow(0 0 14px rgba(255, 138, 26, 0.4));
+  animation: boss-villain-bob 1.4s ease-in-out infinite;
+}
+@keyframes boss-villain-bob {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-5px) rotate(1deg); }
+}
+.boss-bubble {
+  position: relative;
+  z-index: 1;
+  max-width: 340px;
+  background: #fff;
+  color: #1a1330;
+  border: 3px solid #d24dff;
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.boss-bubble::after {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-bottom-color: #d24dff;
+}
+.boss-bubble p {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.boss-cut-btn {
+  padding: 10px 22px;
+  font-size: 1rem;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  background: var(--px-red, #d0392e);
+  color: #fff;
+  cursor: pointer;
+}
+.boss-cut-btn:hover { filter: brightness(1.1); }
 .boss-hud {
   position: absolute;
   top: 8px;

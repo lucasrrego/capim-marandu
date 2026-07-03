@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { DEFAULT_LOADOUT, drawShip } from '../data/shipParts.js'
-import { playExplosion, setThrust, playSuccess } from '../audio/sfx.js'
+import { playExplosion, setThrust, playSuccess, startLandingMusic, stopMusic } from '../audio/sfx.js'
 import { drawLogo, LOGOS } from '../data/pixelSprites.js'
 
 // Clímax do jogo: pousar na Lua.
@@ -485,6 +485,7 @@ onMounted(() => {
   setThrust(false)   // limpa propulsão que possa vir ligada do jogo
   window.addEventListener('keydown', onDown)
   window.addEventListener('keyup', onUp)
+  startLandingMusic()   // trilha épica de final de jogo
   raf = requestAnimationFrame(frame)
 })
 
@@ -493,6 +494,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onDown)
   window.removeEventListener('keyup', onUp)
   setThrust(false)
+  stopMusic()
 })
 </script>
 

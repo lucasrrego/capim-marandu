@@ -77,6 +77,97 @@ export function playSuccess() {
   playBlip({ notes: [72, 76, 79, 84, 88, 91], type: 'square', gain: 0.32, step: 0.09, dur: 0.16 })
 }
 
+/** Parafusadeira: whine agudo de partida → rattle mecânico → clunk de encaixe. */
+export function playWrench() {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const now = c.currentTime
+
+  // 1) whine agudo de partida (o motor engatando)
+  const whine = c.createOscillator()
+  whine.type = 'triangle'
+  whine.frequency.setValueAtTime(700, now)
+  whine.frequency.exponentialRampToValueAtTime(1500, now + 0.1)
+  const wg = c.createGain()
+  wg.gain.setValueAtTime(0.0001, now)
+  wg.gain.exponentialRampToValueAtTime(0.12, now + 0.02)
+  wg.gain.exponentialRampToValueAtTime(0.0001, now + 0.14)
+  whine.connect(wg)
+  wg.connect(c.destination)
+  whine.start(now)
+  whine.stop(now + 0.16)
+
+  // 2) rattle da parafusadeira (ruído picotado), logo após o whine
+  const rStart = now + 0.08
+  const rDur = 0.34
+  const buf = c.createBuffer(1, Math.floor(c.sampleRate * rDur), c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const bp = c.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 1400
+  bp.Q.value = 1.2
+  const out = c.createGain()
+  out.gain.setValueAtTime(0.0001, rStart)
+  out.gain.exponentialRampToValueAtTime(0.3, rStart + 0.02)
+  out.gain.setValueAtTime(0.3, rStart + rDur - 0.08)
+  out.gain.exponentialRampToValueAtTime(0.0001, rStart + rDur)
+  const chop = c.createGain()
+  chop.gain.value = 0.5
+  const lfo = c.createOscillator()
+  lfo.type = 'square'
+  lfo.frequency.setValueAtTime(36, rStart)
+  lfo.frequency.linearRampToValueAtTime(54, rStart + rDur)
+  const lfoDepth = c.createGain()
+  lfoDepth.gain.value = 0.5
+  lfo.connect(lfoDepth)
+  lfoDepth.connect(chop.gain)
+  lfo.start(rStart)
+  lfo.stop(rStart + rDur)
+  src.connect(bp)
+  bp.connect(chop)
+  chop.connect(out)
+  out.connect(c.destination)
+  src.start(rStart)
+  src.stop(rStart + rDur + 0.02)
+
+  // 3) clunk final: o parafuso assentou
+  const t2 = rStart + rDur - 0.02
+  const clunk = c.createOscillator()
+  clunk.type = 'triangle'
+  clunk.frequency.setValueAtTime(170, t2)
+  clunk.frequency.exponentialRampToValueAtTime(60, t2 + 0.1)
+  const cg = c.createGain()
+  cg.gain.setValueAtTime(0.2, t2)
+  cg.gain.exponentialRampToValueAtTime(0.0001, t2 + 0.12)
+  clunk.connect(cg)
+  cg.connect(c.destination)
+  clunk.start(t2)
+  clunk.stop(t2 + 0.14)
+}
+
+/**
+ * Sting de início de batalha (estilo Pokémon): alarme urgente + corrida
+ * ascendente sobre um baixo pulsante. Toca durante a máscara de transição.
+ */
+export function playBattleStart() {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const t = c.currentTime + 0.001
+  // alarme: duas notas alternadas, rápidas e tensas
+  const alarm = [79, 74, 79, 74, 79, 74]
+  alarm.forEach((n, i) => tone(midiToFreq(n), t + i * 0.075, 0.07, 'square', 0.26))
+  // corrida ascendente entrando na luta
+  const run = [55, 60, 64, 67, 72, 76, 79, 84]
+  run.forEach((n, i) => tone(midiToFreq(n), t + 0.48 + i * 0.05, 0.12, 'square', 0.28))
+  // baixo pulsante marcando o clímax
+  for (let i = 0; i < 3; i++) tone(midiToFreq(36), t + i * 0.28, 0.26, 'triangle', 0.26)
+}
+
 /** Coleta de combustível (blip arcade tipo "moeda", subindo). */
 export function playFuel() {
   playBlip({ notes: [84, 91], type: 'square', gain: 0.3, step: 0.07, dur: 0.13 })
@@ -431,68 +522,182 @@ export function playDodge() {
   playBlip({ notes: [72, 60], type: 'triangle', gain: 0.26, step: 0.05, dur: 0.12 })
 }
 
-// ---- Trilha (mesma melodia da intro) ------------------------------------
+// ---- Música (loops procedurais; uma faixa por vez) ----------------------
+// track = { lead:[midi|null], bass:[midi|null], step, leadType, bassType,
+//           leadGain, bassGain, leadDur, bassDur }. null = silêncio no passo.
 
-const LEAD = [
-  69, 72, 76, 72, 81, 76, 72, 76,
-  67, 71, 74, 71, 79, 74, 71, 74,
-  65, 69, 72, 69, 77, 72, 69, 72,
-  64, 68, 71, 76, 71, 68, 71, 68,
-]
-const BASS = [
-  45, null, null, null, 45, null, null, null,
-  43, null, null, null, 43, null, null, null,
-  41, null, null, null, 41, null, null, null,
-  40, null, null, null, 40, null, null, null,
-]
-const STEP = 0.15
+// Tema da intro / tela inicial (melodia original).
+const THEME_TRACK = {
+  lead: [
+    69, 72, 76, 72, 81, 76, 72, 76,
+    67, 71, 74, 71, 79, 74, 71, 74,
+    65, 69, 72, 69, 77, 72, 69, 72,
+    64, 68, 71, 76, 71, 68, 71, 68,
+  ],
+  bass: [
+    45, null, null, null, 45, null, null, null,
+    43, null, null, null, 43, null, null, null,
+    41, null, null, null, 41, null, null, null,
+    40, null, null, null, 40, null, null, null,
+  ],
+  step: 0.15,
+}
 
-let themeGain = null
-let themeTimer = 0
-let themeStart = 0
-let themeStep = 0
+// Jogo da Vó Baiana — cômica, saltitante (oom-pah de desenho animado).
+const ABDUCTION_TRACK = {
+  lead: [
+    72, 74, 76, 74, 79, 76, 74, 72,
+    77, 76, 74, 72, 74, 76, 72, 71,
+  ],
+  bass: [
+    48, null, 55, null, 48, null, 55, null,
+    53, null, 60, null, 53, null, 55, null,
+  ],
+  step: 0.13,
+  leadType: 'square', leadGain: 0.4, leadDur: 1.1,
+  bassType: 'triangle', bassGain: 0.5, bassDur: 1.3,
+}
 
-/** Inicia a trilha em loop (idempotente). */
-export function startTheme(volume = 0.13) {
+// Pouso na Lua — épica, "final de jogo" (lenta e triunfante).
+const LANDING_TRACK = {
+  lead: [
+    72, 76, 79, 84, 83, 79, 81, 76,
+    74, 77, 81, 86, 84, 81, 79, 76,
+  ],
+  bass: [
+    48, null, null, null, 43, null, null, null,
+    45, null, null, null, 41, null, null, null,
+  ],
+  step: 0.24,
+  leadType: 'triangle', leadGain: 0.42, leadDur: 1.9,
+  bassType: 'triangle', bassGain: 0.5, bassDur: 3.6,
+}
+
+let musicGain = null
+let musicTimer = 0
+let musicStart = 0
+let musicStep = 0
+let musicTrack = null
+
+/** Toca um track em loop (uma faixa por vez; troca se já houver outra). */
+export function startMusic(track, volume = 0.13) {
   const c = getCtx()
-  if (!c || themeTimer) return
+  if (!c) return
+  if (musicTrack === track && musicTimer) return   // já tocando esta faixa
+  stopMusic()
   resume()
-
-  themeGain = c.createGain()
-  themeGain.gain.value = volume
-  themeGain.connect(c.destination)
-
-  themeStart = c.currentTime + 0.1
-  themeStep = 0
-
+  musicTrack = track
+  musicGain = c.createGain()
+  musicGain.gain.value = volume
+  musicGain.connect(c.destination)
+  musicStart = c.currentTime + 0.1
+  musicStep = 0
+  const step = track.step
   const scheduler = () => {
-    if (!themeGain) return
-    while (themeStart + themeStep * STEP < c.currentTime + 0.2) {
-      const t = themeStart + themeStep * STEP
-      const lead = LEAD[themeStep % LEAD.length]
-      if (lead) tone(midiToFreq(lead), t, STEP * 1.6, 'square', 0.45, themeGain)
-      const bass = BASS[themeStep % BASS.length]
-      if (bass) tone(midiToFreq(bass), t, STEP * 3.2, 'triangle', 0.55, themeGain)
-      themeStep++
+    if (!musicGain || musicTrack !== track) return
+    while (musicStart + musicStep * step < c.currentTime + 0.2) {
+      const t = musicStart + musicStep * step
+      const lead = track.lead[musicStep % track.lead.length]
+      if (lead) tone(midiToFreq(lead), t, step * (track.leadDur ?? 1.6), track.leadType ?? 'square', track.leadGain ?? 0.45, musicGain)
+      const bass = track.bass && track.bass[musicStep % track.bass.length]
+      if (bass) tone(midiToFreq(bass), t, step * (track.bassDur ?? 3.2), track.bassType ?? 'triangle', track.bassGain ?? 0.55, musicGain)
+      musicStep++
     }
   }
   scheduler()
-  themeTimer = setInterval(scheduler, 60)
+  musicTimer = setInterval(scheduler, 60)
 }
 
-/** Para a trilha sem fechar o contexto (SFX continuam disponíveis). */
-export function stopTheme() {
-  if (themeTimer) {
-    clearInterval(themeTimer)
-    themeTimer = 0
+/** Para a música atual (sem fechar o contexto; SFX continuam). */
+export function stopMusic() {
+  if (musicTimer) {
+    clearInterval(musicTimer)
+    musicTimer = 0
   }
-  if (themeGain) {
+  musicTrack = null
+  if (musicGain) {
     const c = getCtx()
     try {
-      themeGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.05)
+      musicGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.05)
     } catch { /* contexto pode já estar indisponível */ }
-    const g = themeGain
-    themeGain = null
+    const g = musicGain
+    musicGain = null
     setTimeout(() => { try { g.disconnect() } catch { /* noop */ } }, 300)
   }
 }
+
+/** Tema da intro / tela inicial. */
+export function startTheme(volume = 0.13) { startMusic(THEME_TRACK, volume) }
+export function stopTheme() { stopMusic() }
+
+/** Trilha cômica do jogo da Vó Baiana. */
+export function startAbductionMusic(volume = 0.12) { startMusic(ABDUCTION_TRACK, volume) }
+
+/** Trilha épica (final de jogo) do pouso na Lua. */
+export function startLandingMusic(volume = 0.2) { startMusic(LANDING_TRACK, volume) }
+
+// Hangar — trilha de menu (calma, "seleção", meio espacial).
+const HANGAR_TRACK = {
+  lead: [
+    69, null, 72, null, 74, null, 72, null,
+    71, null, 74, null, 76, null, 74, null,
+    69, null, 72, null, 76, null, 74, 72,
+    67, null, 71, null, 74, null, 69, null,
+  ],
+  bass: [
+    45, null, null, null, 45, null, null, null,
+    41, null, null, null, 41, null, null, null,
+    40, null, null, null, 40, null, null, null,
+    38, null, null, null, 43, null, null, null,
+  ],
+  step: 0.18,
+  leadType: 'triangle', leadGain: 0.4, leadDur: 1.7,
+  bassType: 'triangle', bassGain: 0.5, bassDur: 3.4,
+}
+
+// Jogo principal — trilha de aventura (rápida, baixo pulsante, avançando).
+const GAME_TRACK = {
+  lead: [
+    76, 79, 81, 79, 84, 81, 79, 76,
+    77, 81, 84, 81, 88, 84, 81, 77,
+    76, 79, 83, 79, 84, 83, 79, 76,
+    74, 77, 81, 84, 81, 77, 74, 71,
+  ],
+  bass: [
+    40, 40, 47, 40, 40, 40, 47, 40,
+    41, 41, 48, 41, 41, 41, 48, 41,
+    36, 36, 43, 36, 36, 36, 43, 36,
+    38, 38, 45, 38, 38, 38, 45, 38,
+  ],
+  step: 0.12,
+  leadType: 'square', leadGain: 0.32, leadDur: 0.95,
+  bassType: 'triangle', bassGain: 0.5, bassDur: 0.9,
+}
+
+/** Trilha de menu do hangar. */
+export function startHangarMusic(volume = 0.12) { startMusic(HANGAR_TRACK, volume) }
+
+/** Trilha de aventura do jogo principal. */
+export function startGameMusic(volume = 0.1) { startMusic(GAME_TRACK, volume) }
+
+// Boss — tensa, "chefão final": menor, baixo pulsante, cromatismo e tritono.
+const BOSS_TRACK = {
+  lead: [
+    62, 65, 68, 65, 62, null, 61, null,
+    63, 66, 69, 66, 63, null, 62, null,
+    62, 65, 68, 65, 62, 61, 60, 59,
+    58, 62, 65, 69, 68, 65, 62, 58,
+  ],
+  bass: [
+    38, 38, 38, 38, 38, 38, 38, 38,
+    39, 39, 39, 39, 39, 39, 39, 39,
+    38, 38, 38, 38, 38, 38, 38, 38,
+    40, 40, 40, 40, 44, 44, 44, 44,
+  ],
+  step: 0.12,
+  leadType: 'square', leadGain: 0.34, leadDur: 0.95,
+  bassType: 'triangle', bassGain: 0.55, bassDur: 0.9,
+}
+
+/** Trilha tensa da batalha de chefe. */
+export function startBossMusic(volume = 0.16) { startMusic(BOSS_TRACK, volume) }

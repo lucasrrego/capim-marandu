@@ -8,7 +8,7 @@ import {
   buildShipStats,
   drawShip,
 } from '../data/shipParts.js'
-import { playSelect, playConfirm, playSparkle } from '../audio/sfx.js'
+import { playSelect, playConfirm, playSparkle, playWrench, startHangarMusic, stopMusic } from '../audio/sfx.js'
 import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
@@ -66,7 +66,7 @@ function selectPart(part) {
   coins.value -= STATIC_COST
   loadout.value = { ...loadout.value, [activeCategory.value]: part.id }
   emit('install', STATIC_COST)
-  playSelect()
+  playWrench()   // som mecânico de encaixar a peça
 }
 
 function buyUpgrade(track) {
@@ -125,11 +125,13 @@ function goBack() {
 }
 
 onMounted(() => {
+  startHangarMusic()   // trilha de menu
   raf = requestAnimationFrame(drawPreview)
 })
 
 onUnmounted(() => {
   cancelAnimationFrame(raf)
+  stopMusic()
 })
 </script>
 
