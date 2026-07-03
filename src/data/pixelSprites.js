@@ -22,6 +22,8 @@ export const PALETTE = {
   o: '#ff8a1a',       // laranja
   b: '#6cc6ff',       // azul (vidro)
   W: '#d5f0ff',       // azul claro
+  // metal / neutros
+  a: '#b8bcc8',       // cinza metálico (= --px-gray)
 }
 
 /** Desenha um sprite (array de strings) no contexto 2D. */
@@ -114,3 +116,31 @@ export const GUGU = {
     '...ddd....ddd...',
   ],
 }
+
+// ---- Objetos voadores (inimigos) ----------------------------------------
+// Mesmo padrão dos sprites do Gugu: string-map, 1 char = 1 pixel.
+
+// Sonda/satélite da NASA: corpo central + painéis solares + antena. 15x8.
+export const SATELLITE = [
+  '.......y.......',
+  '.......a.......',
+  'kkkk.aaaaa.kkkk',
+  'kbWk.awwwa.kWbk',
+  'kbbkawrrrwakbbk',
+  'kWbk.awbwa.kbWk',
+  'kkkk.aaaaa.kkkk',
+  '......aya......',
+]
+
+// Tralha espacial: sucata metálica com faixa de perigo e rebites. 10x9.
+export const SPACE_JUNK = [
+  '..kkkkk...',
+  '.kaaaaak..',
+  'kaawwaaak.',
+  'kayyyyyak.',
+  'kakkkkkak.',
+  'kaaaaaaakk',
+  '.kaoaaoak.',
+  '.kkaaaakk.',
+  '...kkkk...',
+]
