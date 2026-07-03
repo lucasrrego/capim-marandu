@@ -6,6 +6,7 @@ const emit = defineEmits(['select', 'back'])
 
 const GAMES = [
   { id: 'abduction', icon: '🛸', name: 'Sonho da Vó Baiana', desc: 'Abduza os jogadores' },
+  { id: 'mario', icon: '🍄', name: 'Gugu Bros', desc: 'Corra pro banheiro' },
   { id: 'moon', icon: '🌙', name: 'Pouso na Lua', desc: 'Pouse na plataforma' },
   { id: 'boss', icon: '👾', name: 'Luta com o Chefe', desc: 'Encare a nave inimiga' },
 ]
