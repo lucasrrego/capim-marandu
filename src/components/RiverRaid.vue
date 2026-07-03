@@ -7,7 +7,7 @@ import AbductionGame from './AbductionGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
-import { playFuel, playExplosion, setThrust } from '../audio/sfx.js'
+import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady } from '../audio/sfx.js'
 import { drawSprite, SATELLITE, SPACE_JUNK } from '../data/pixelSprites.js'
 const W = 480
 const H = 640
@@ -347,6 +347,7 @@ function fire(s) {
   } else {
     spawnBullet(s, cx)
   }
+  playShot(shipStats.weaponId)
 }
 
 // largura do feixe conforme a carga acumulada
@@ -360,12 +361,14 @@ function startCharge(s) {
   if (s.plasmaCd > 0 || s.charging) return
   s.charging = true
   s.chargeStart = s.time
+  startPlasmaCharge(PLASMA_MAX_CHARGE)
 }
 
 // solta o feixe: perfura tudo, e a recarga = 2x o tempo carregado
 function releaseFire(s) {
   if (!s.charging) return
   s.charging = false
+  stopPlasmaCharge()
   const charge = Math.min(s.time - s.chargeStart, PLASMA_MAX_CHARGE)
   if (charge < PLASMA_MIN_CHARGE) return   // carga curta demais: cancela sem cooldown
   const p = s.player
@@ -379,6 +382,7 @@ function releaseFire(s) {
     beam: true,
   })
   s.plasmaCd = charge * 2
+  playPlasmaFire(charge / PLASMA_MAX_CHARGE)
 }
 
 function hit(a, b) {
@@ -469,6 +473,8 @@ function update(dt, s) {
   // sequência de morte: explode, congela o mundo por ~2s, depois renasce
   if (s.respawn > 0) {
     setThrust(false)   // sem propulsão durante a explosão
+    stopPlasmaCharge()
+    s.charging = false
     s.respawn -= dt * 1000
     if (s.respawn <= 0) {
       s.respawn = 0
@@ -536,7 +542,10 @@ function update(dt, s) {
   s.fuel -= (5 * (s.speed / BASE_SPEED) * shipStats.fuelUse) * dt
   if (s.invuln > 0) s.invuln -= dt * 1000
   if (s.goldFlash > 0) s.goldFlash -= dt * 1000
-  if (s.plasmaCd > 0) s.plasmaCd -= dt * 1000
+  if (s.plasmaCd > 0) {
+    s.plasmaCd -= dt * 1000
+    if (s.plasmaCd <= 0) { s.plasmaCd = 0; playPlasmaReady() }   // munição do plasma voltou
+  }
 
   // tiros
   for (const b of s.bullets) b.y -= 520 * dt
@@ -933,8 +942,9 @@ function frame(ts) {
     if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
     update(dt, state)
     draw(state)
-  } else if (phase.value !== 'moon') {
-    setThrust(false)   // pausado / hangar / fim → sem propulsão (na Lua quem controla é o MoonLanding)
+  } else {
+    if (phase.value !== 'moon') setThrust(false)   // na Lua quem controla a propulsão é o MoonLanding
+    stopPlasmaCharge()   // pausado / hangar / moon / fim → sem zumbido de carga
   }
   raf = requestAnimationFrame(frame)
 }
@@ -1090,6 +1100,7 @@ onUnmounted(() => {
   window.removeEventListener('keyup', ku)
   if (fireHold) clearInterval(fireHold)
   setThrust(false)
+  stopPlasmaCharge()
 })
 </script>
 

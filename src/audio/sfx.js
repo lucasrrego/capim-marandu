@@ -207,6 +207,87 @@ export function playExplosion(gain = 1.45) {
   crack.stop(now + 0.07)
 }
 
+// ---- Tiros / plasma -----------------------------------------------------
+
+// tom com pitch varrido (base dos "pews" de tiro)
+function sweep({ f0, f1, dur, type = 'square', gain = 0.3 }) {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const now = c.currentTime
+  const o = c.createOscillator()
+  o.type = type
+  o.frequency.setValueAtTime(f0, now)
+  o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), now + dur)
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, now)
+  g.gain.exponentialRampToValueAtTime(gain, now + 0.008)
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+  o.connect(g)
+  g.connect(c.destination)
+  o.start(now)
+  o.stop(now + dur + 0.02)
+}
+
+/** Disparo — som distinto por arma (canhão grave x metralhadora curta/aguda). */
+export function playShot(weapon = 'cannon') {
+  if (weapon === 'rapid') {
+    sweep({ f0: 1040, f1: 620, dur: 0.05, type: 'square', gain: 0.13 })
+  } else {
+    sweep({ f0: 820, f1: 210, dur: 0.12, type: 'square', gain: 0.24 })
+  }
+}
+
+let plasmaChargeNodes = null
+
+/** Zumbido de carga do plasma que sobe de tom (idempotente). */
+export function startPlasmaCharge(rampMs = 1600) {
+  const c = getCtx()
+  if (!c || plasmaChargeNodes) return
+  resume()
+  const now = c.currentTime
+  const o = c.createOscillator()
+  o.type = 'sawtooth'
+  o.frequency.setValueAtTime(150, now)
+  o.frequency.exponentialRampToValueAtTime(1300, now + rampMs / 1000)
+  const lp = c.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = 2200
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, now)
+  g.gain.exponentialRampToValueAtTime(0.12, now + 0.05)
+  o.connect(lp)
+  lp.connect(g)
+  g.connect(c.destination)
+  o.start(now)
+  plasmaChargeNodes = { o, g }
+}
+
+/** Para o zumbido de carga (ao soltar, morrer, pausar). */
+export function stopPlasmaCharge() {
+  if (!plasmaChargeNodes) return
+  const { o, g } = plasmaChargeNodes
+  plasmaChargeNodes = null
+  const c = getCtx()
+  try {
+    const now = c.currentTime
+    g.gain.setTargetAtTime(0.0001, now, 0.03)
+    o.stop(now + 0.12)
+  } catch { /* noop */ }
+}
+
+/** Plasma recarregado / pronto de novo (ping curto subindo). */
+export function playPlasmaReady() {
+  playBlip({ notes: [83, 90], type: 'triangle', gain: 0.22, step: 0.06, dur: 0.11 })
+}
+
+/** Disparo do feixe de plasma (zap descendente + peso; escala com a carga). */
+export function playPlasmaFire(power = 1) {
+  const p = Math.max(0, Math.min(1, power))
+  sweep({ f0: 1300, f1: 130, dur: 0.22 + 0.16 * p, type: 'sawtooth', gain: 0.22 + 0.08 * p })
+  sweep({ f0: 320, f1: 60, dur: 0.3, type: 'sine', gain: 0.2 + 0.1 * p })
+}
+
 // ---- Propulsão contínua (segurar acelerar) ------------------------------
 
 let thrustNodes = null
