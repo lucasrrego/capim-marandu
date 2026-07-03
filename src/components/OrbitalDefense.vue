@@ -20,7 +20,7 @@ const TUNING = {
     fireBelow: 0.35,     // só atira com cover abaixo disso (quase todo exposto)
     safeAbove: 0.5,      // cover acima disso = abrigado (impacto não machuca)
   },
-  gun: { clip: 6, reloadS: 0.8 },
+  gun: { clip: 6, reloadS: 0.4 },   // recarga rápida: abaixou o muro, encheu o pente
   lives: 3,
   coins: { perScore: 50, lossKeep: 0.5 },   // score→moedas; derrota guarda metade
   wave1: {
@@ -52,12 +52,11 @@ const clipSize = ref(TUNING.gun.clip)
 const score = ref(0)
 const reloading = ref(false)
 const covered = ref(true)
-const waveLabel = ref(1)
 const won = ref(false)
 const coinsRound = ref(0)
 
 const speech = [
-  'Olha o tanto de pedra vindo na nossa direção! Isso não tá certo, não...',
+  'Olha o tanto de pedra vindo na nossa direção! Um cinturão inteiro, minha nossa!',
   'Segura o ESPAÇO pra eu sair de trás do painel — aí é só mirar com o mouse e atirar!',
   'Solta o espaço pra eu me esconder: lá atrás eu recarrego e nada me acerta. Bora defender a nave!',
 ]
@@ -257,14 +256,14 @@ function update(dt, s) {
   s.cover += Math.max(-d, Math.min(d, target - s.cover))
   covered.value = s.cover > TUNING.pedal.safeAbove
 
-  // recarga: só progride abrigado; expor no meio cancela
-  if (s.cover > 0.7 && ammo.value < clipSize.value && !reloading.value) {
+  // recarga: começa assim que abaixa o muro; expor no meio cancela
+  if (s.cover > 0.55 && ammo.value < clipSize.value && !reloading.value) {
     reloading.value = true
     s.reloadT = TUNING.gun.reloadS
     playBlip({ notes: [55], type: 'triangle', gain: 0.2, dur: 0.07 })
   }
   if (reloading.value) {
-    if (s.cover < 0.5) {
+    if (s.cover < 0.45) {
       reloading.value = false          // saiu do abrigo: recarga interrompida
     } else {
       s.reloadT -= dt
@@ -314,7 +313,7 @@ function update(dt, s) {
   if (s.shake > 0) s.shake = Math.max(0, s.shake - dt * 30)
   if (s.dmgFlash > 0) s.dmgFlash = Math.max(0, s.dmgFlash - dt * 1.6)
 
-  // wave limpa = vitória (por enquanto só a wave 1; 2 e 3 vêm na sequência)
+  // limpou todos os asteroides = vitória (wave única, sobrevivível)
   if (s.spawned >= cfg.count && s.enemies.length === 0) endRound(true)
 }
 
@@ -544,7 +543,6 @@ function startGame() {
   ammo.value = CLIP
   score.value = 0
   reloading.value = false
-  waveLabel.value = 1
   pedal = false
   sub.value = 'playing'
   last = 0
@@ -600,7 +598,7 @@ onUnmounted(() => {
         <span class="od-lives">
           <span v-for="n in TUNING.lives" :key="n" class="od-heart" :class="{ off: n > lives }">🛡</span>
         </span>
-        <span class="od-wave">ONDA {{ waveLabel }}</span>
+        <span class="od-wave">DEFESA ORBITAL</span>
         <span class="od-score">{{ score }}</span>
       </div>
       <div class="od-hud-bottom">
