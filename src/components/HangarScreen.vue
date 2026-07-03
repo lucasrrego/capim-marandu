@@ -13,7 +13,7 @@ import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
 const coins = defineModel('coins', { type: Number, default: 0 })
-const emit = defineEmits(['launch', 'back', 'install'])
+const emit = defineEmits(['launch', 'back', 'install', 'achievements'])
 
 const activeCategory = ref('wing')
 const previewCanvas = ref(null)
@@ -114,9 +114,9 @@ function drawPreview(ts) {
   raf = requestAnimationFrame(drawPreview)
 }
 
-function launch() {
+function launch(short = false) {
   playConfirm()
-  emit('launch', { ...loadout.value })
+  emit('launch', { loadout: { ...loadout.value }, short })
 }
 
 function goBack() {
@@ -140,6 +140,7 @@ onUnmounted(() => {
     <div class="hangar-grid"></div>
 
     <header class="hangar-header">
+      <button class="hangar-ach-btn" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
       <span class="hangar-badge">CONSTRUTOR</span>
       <span class="hangar-coins">🪙 {{ coins }}</span>
       <h2>Monte sua nave</h2>
@@ -236,8 +237,9 @@ onUnmounted(() => {
 
     <div class="hangar-actions">
       <button class="hangar-btn secondary" @click="goBack">← Voltar</button>
-      <button class="hangar-btn primary" @click="launch">🚀 Lançar</button>
+      <button class="hangar-btn primary" @click="launch(false)">🚀 Lançar</button>
     </div>
+    <button class="hangar-devrun" @click="launch(true)">⚡ Corrida curta (teste)</button>
   </div>
 </template>
 
@@ -290,6 +292,24 @@ onUnmounted(() => {
   font-size: 1.3rem;
   color: #fff;
 }
+
+.hangar-ach-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--accent, #aa3bff);
+  border: 1px solid rgba(170, 59, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(170, 59, 255, 0.1);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.08s;
+}
+.hangar-ach-btn:hover { filter: brightness(1.2); }
+.hangar-ach-btn:active { transform: translateY(1px); }
 
 .hangar-coins {
   position: absolute;
@@ -592,4 +612,21 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .hangar-btn:hover { filter: brightness(1.15); }
+
+.hangar-devrun {
+  position: relative;
+  z-index: 1;
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #9aa;
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.hangar-devrun:hover { filter: brightness(1.3); }
 </style>

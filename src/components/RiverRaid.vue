@@ -4,6 +4,7 @@ import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import AbductionGame from './AbductionGame.vue'
+import BossBattle from './BossBattle.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
@@ -22,12 +23,13 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'moon' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
 let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
 const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
+const bossHp = ref(0)        // HP do jogador durante a luta contra o chefe (barra lateral)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
 const progressPct = ref(0)             // % da distância total percorrida
@@ -45,6 +47,7 @@ const displayLives = computed(() => {
   if (phase.value === 'start' || phase.value === 'hangar') {
     return buildShipStats(hangarLoadout.value).startLives
   }
+  if (phase.value === 'boss') return bossHp.value   // no chefe, VIDAS = HP da batalha
   return lives.value
 })
 
@@ -69,10 +72,9 @@ const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
 const FUEL_REFILL = 60            // combustível por tanque F
-// Meta depois que o 5º warp (spawna em RUN_LENGTH=1500) rola a tela inteira e
-// passa pelo player (~+724 px), + folga pra andar mais um pouco antes da Lua.
-// Assim testa o fluxo completo: distância → pouso na Lua.
-const GOAL_DISTANCE = 2600            // px de rolagem até o fim do percurso
+// Comprimento do percurso (px de rolagem até a Lua). Dois modos:
+const SHORT_GOAL = 2600              // corrida curta (teste/dev) — fecha o fluxo rápido
+const LONG_GOAL = 24000             // corrida normal — bem mais longa
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
@@ -104,9 +106,9 @@ const ENEMY_SIZE = {
   junk: [30, 27],        // 10x9 do sprite * escala 3
 }
 
-// ---- Warps de mini game (1 a cada 1/5 do percurso) ----
-const RUN_LENGTH = 1500              // reduzido para teste (warp a cada ~300 px)
-const WARP_INTERVAL = RUN_LENGTH / 5
+// ---- Warps de mini game: 5 portais espalhados pelo percurso ----
+// intervalo = goal / (5 + 1), calculado por corrida (curta ou longa) em startGame.
+const WARP_SEGMENTS = 5
 const WARP_COLORS = ['#ff4d4d', '#ffd24d', '#37e0a0', '#9b7bff', '#ff8a1a']
 const WARP_W = 32
 const WARP_H = 40
@@ -114,10 +116,9 @@ const WARP_H = 40
 const MOON_R = 128                   // raio do disco da Lua
 const MOON_WARP_W = 64               // hitbox do portal centralizado na Lua
 const MOON_WARP_H = 64
-// px que a Lua desce (do topo até o player) após GOAL_DISTANCE.
+// px que a Lua desce (do topo até o player) após o fim do percurso.
 // A barra de progresso só chega a 100% quando o portal alcança o player.
 const MOON_APPROACH = (H - 74) + MOON_R
-const PROGRESS_GOAL = GOAL_DISTANCE + MOON_APPROACH
 
 const keys = {}
 
@@ -211,9 +212,16 @@ watch(bank, (v) => localStorage.setItem(slotKey('coins'), String(v)))
 watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(slotKey('body'), JSON.stringify(b)), { deep: true })
 watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(slotKey('engine'), JSON.stringify(e)), { deep: true })
 
+// Nos primeiros INTRO_MS o canal fica totalmente aberto (margens só nas bordas
+// da tela), dando folga perto do spawn antes das paredes começarem a fechar.
+const INTRO_MS = 10000
+const OPEN_LEFT = MARGIN
+const OPEN_RIGHT = W - MARGIN
+
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
-  return { left: W * 0.28, right: W * 0.72, tL: W * 0.28, tR: W * 0.72, steps: 0 }
+  // começa aberto pra transição suave quando as paredes voltam a fechar
+  return { left: OPEN_LEFT, right: OPEN_RIGHT, tL: OPEN_LEFT, tR: OPEN_RIGHT, steps: 0 }
 }
 function stepGen(g) {
   if (g.steps <= 0) {
@@ -232,9 +240,9 @@ function stepGen(g) {
 function newState() {
   const gen = makeGen()
   const rows = []
+  // spawn começa com o canal aberto (paredes só nas bordas)
   for (let i = 0; i < N_ROWS; i++) {
-    const b = stepGen(gen)
-    rows.push({ y: H - i * ROW_H, left: b.left, right: b.right })
+    rows.push({ y: H - i * ROW_H, left: OPEN_LEFT, right: OPEN_RIGHT })
   }
   const stars = []
   for (let i = 0; i < 90; i++) {
@@ -291,8 +299,13 @@ function newState() {
     over: false,
     time: 0,
     warps: [],
-    nextWarpAt: WARP_INTERVAL,
+    // percurso: valores padrão (curto); startGame ajusta conforme o modo
+    goal: SHORT_GOAL,
+    warpInterval: SHORT_GOAL / (WARP_SEGMENTS + 1),
+    progressGoal: SHORT_GOAL + MOON_APPROACH,
+    nextWarpAt: SHORT_GOAL / (WARP_SEGMENTS + 1),
     warpSegment: 0,
+    bossDone: false,                            // chefe na metade do percurso (uma vez)
     abductionSegment: Math.floor(rand(1, 6)),   // qual warp (1..5) vira o minigame da abdução
     coinAcc: 0,
     runCoins: 0,
@@ -306,7 +319,7 @@ function newState() {
 }
 
 function spawnWarp(s) {
-  if (s.warpSegment >= 5) return
+  if (s.warpSegment >= WARP_SEGMENTS) return
   const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
   const segment = s.warpSegment + 1
   const color = WARP_COLORS[s.warpSegment]
@@ -321,7 +334,7 @@ function spawnWarp(s) {
     alive: true,
   })
   s.warpSegment++
-  s.nextWarpAt += WARP_INTERVAL
+  s.nextWarpAt += s.warpInterval
 }
 
 // Lua desce do topo carregando o portal de pouso (6º warp) no centro.
@@ -550,12 +563,19 @@ function update(dt, s) {
   const move = s.speed * dt
   s.distance += move
 
-  while (s.distance >= s.nextWarpAt && s.warpSegment < 5) spawnWarp(s)
+  // metade do percurso → batalha contra o chefe (uma vez)
+  if (!s.bossDone && s.distance >= s.goal / 2) {
+    s.bossDone = true
+    enterBoss()
+    return
+  }
+
+  while (s.distance >= s.nextWarpAt && s.warpSegment < WARP_SEGMENTS) spawnWarp(s)
 
   // fim do percurso → a Lua surge no topo; jogador precisa mirar no portal dela.
   // distância continua contando (em sincronia com a Lua descendo) até o portal
   // alcançar o player, quando a barra chega a 100%.
-  if (s.distance >= GOAL_DISTANCE) s.moonActive = true
+  if (s.distance >= s.goal) s.moonActive = true
 
   // rolagem do terreno + reciclagem
   let minY = Infinity
@@ -563,7 +583,8 @@ function update(dt, s) {
   for (const r of s.rows) {
     if (r.y >= H) {
       minY -= ROW_H
-      const b = stepGen(s.gen)
+      // nos primeiros 10s mantém aberto; depois as paredes voltam a fechar
+      const b = s.time < INTRO_MS ? { left: OPEN_LEFT, right: OPEN_RIGHT } : stepGen(s.gen)
       r.y = minY
       r.left = b.left
       r.right = b.right
@@ -711,7 +732,7 @@ function update(dt, s) {
   score.value = Math.floor(s.score)
   fuelPct.value = Math.max(0, Math.round((s.fuel / s.fuelMax) * 100))
   speedLabel.value = (s.speed / BASE_SPEED).toFixed(1) + 'x'
-  progressPct.value = Math.min(100, (s.distance / PROGRESS_GOAL) * 100)
+  progressPct.value = Math.min(100, (s.distance / s.progressGoal) * 100)
 }
 
 // ---- Render ----
@@ -1035,6 +1056,15 @@ function enterMoon(fromStart = false) {
   phase.value = 'moon'
 }
 
+// bateu no pouso = corrida encerrada (mesmo com vidas sobrando)
+function onMoonCrash() {
+  if (moonFromStart) return          // teste pela tela inicial: sem corrida pra encerrar
+  state.over = true
+  settleRun(shipStats.deathKeep)
+  tallyLoss()
+  lives.value = 0
+}
+
 // sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
 function leaveMoon() {
   phase.value = moonFromStart ? 'start' : 'hangar'
@@ -1055,11 +1085,20 @@ function onLanded() {
   if (landTotal >= 10) unlockAchievement('ten-landings')
 }
 
-function startGame(loadout) {
-  const config = { ...DEFAULT_LOADOUT, ...(loadout ?? hangarLoadout.value) }
+function startGame(payload) {
+  const opts = payload || {}
+  const short = opts.short === true
+  const config = { ...DEFAULT_LOADOUT, ...(opts.loadout ?? hangarLoadout.value) }
   shipLoadout = config
   shipStats = buildShipStats(shipLoadout)
   state = newState()
+  // define o comprimento do percurso conforme o modo
+  const goal = short ? SHORT_GOAL : LONG_GOAL
+  state.short = short
+  state.goal = goal
+  state.warpInterval = goal / (WARP_SEGMENTS + 1)
+  state.nextWarpAt = goal / (WARP_SEGMENTS + 1)
+  state.progressGoal = goal + MOON_APPROACH
   state.player.w = shipStats.hitboxW
   state.player.h = shipStats.hitboxH
   state.player.x = W / 2 - state.player.w / 2
@@ -1098,9 +1137,38 @@ function openAbduction() {
   phase.value = 'minigame'
 }
 
+const WARP_INVULN = 2000   // ms de invuln ao voltar do warp (não explode na parede)
+
 function exitMinigame() {
+  if (state) state.invuln = Math.max(state.invuln, WARP_INVULN)
   phase.value = 'playing'
   last = 0
+}
+
+// ---- Chefe (metade do percurso) ----
+function enterBoss() {
+  phase.value = 'boss'
+}
+
+// venceu o chefe: recompensa entra na corrida e o percurso continua
+function onBossCleared(coins) {
+  const n = Math.floor(coins || 0)
+  if (n > 0) {
+    state.runCoins += n
+    runCoins.value = state.runCoins
+  }
+  state.invuln = Math.max(state.invuln, WARP_INVULN)
+  phase.value = 'playing'
+  last = 0
+}
+
+// perdeu pro chefe: encerra a corrida (game over)
+function onBossFailed() {
+  state.over = true
+  settleRun(shipStats.deathKeep)
+  tallyLoss()
+  lives.value = 0
+  phase.value = 'over'
 }
 
 // Volta do minigame: pra tela inicial se veio de lá, senão retoma o percurso.
@@ -1208,6 +1276,7 @@ onUnmounted(() => {
           :height="H"
           @reward="addCoins"
           @landed="onLanded"
+          @crashed="onMoonCrash"
           @fuel="fuelPct = $event"
           @speed="speedLabel = $event"
           @exit="leaveMoon"
@@ -1222,7 +1291,6 @@ onUnmounted(() => {
           v-else-if="phase === 'start'"
           class="rr-hangar"
           @play="playIntro"
-          @achievements="phase = 'achievements'"
           :dev="isDev"
           @minigame="openAbduction"
         />
@@ -1238,7 +1306,7 @@ onUnmounted(() => {
         <AchievementsScreen
           v-else-if="phase === 'achievements'"
           class="rr-hangar"
-          @back="phase = 'start'"
+          @back="phase = 'hangar'"
         />
 
         <HangarScreen
@@ -1248,6 +1316,7 @@ onUnmounted(() => {
           class="rr-hangar"
           @launch="startGame"
           @install="onInstall"
+          @achievements="phase = 'achievements'"
           @back="phase = 'start'"
         />
 
@@ -1261,6 +1330,18 @@ onUnmounted(() => {
           @earn="earnMinigame"
           @abduct="onAbduct"
           @back="leaveMinigame"
+        />
+
+        <BossBattle
+          v-else-if="phase === 'boss'"
+          class="rr-hangar"
+          :loadout="hangarLoadout"
+          :width="W"
+          :height="H"
+          :short="state?.short"
+          @hp="bossHp = $event"
+          @cleared="onBossCleared"
+          @failed="onBossFailed"
         />
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">
