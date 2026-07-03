@@ -340,3 +340,24 @@ export const BLONDE_WOMAN = [
   '.yyjjjjjjjyy.',
   '.yyyyyyyyyyy.',
 ]
+
+// O magnata (busto): topete loiro (L), cara alaranjada (o), terno azul-marinho
+// (J), camisa branca (w) e gravata vermelha comprida (r). Grade 15.
+export const MAGNATA = [
+  '...LLLLLLLLL...',
+  '..LLLLLLLLLLL..',
+  '.LLLLLLLLLLLLL.',
+  '.LLLLLLLLLLLLL.',
+  '.LLoooooooooLL.',
+  '.LLookoookooLL.',
+  '.LLoooooooooLL.',
+  '.LLooorrroooLL.',
+  '.LLoooooooooLL.',
+  '....ooooooo....',
+  'JJJJJwwwwwJJJJJ',
+  'JJJJJJwrwJJJJJJ',
+  'JJJJJJwrwJJJJJJ',
+  'JJJJJJwrwJJJJJJ',
+  'JJJJJJJrJJJJJJJ',
+  '.JJJJJJJJJJJJJ.',
+]

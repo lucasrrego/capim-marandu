@@ -5,7 +5,7 @@ import {
   PLAYER_BR, PLAYER_JP, PLAYER_STAR, VO_BAIANA, BLONDE_WOMAN,
 } from '../data/pixelSprites.js'
 import { DEFAULT_LOADOUT, drawShip as drawHangarShip } from '../data/shipParts.js'
-import { resume, playClaw, playAbduct, playAbductStar, playDodge } from '../audio/sfx.js'
+import { resume, playClaw, playAbduct, playAbductStar, playDodge, startAbductionMusic, stopMusic } from '../audio/sfx.js'
 
 const props = defineProps({
   segment: { type: Number, default: 1 },
@@ -450,6 +450,7 @@ onMounted(() => {
   }
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
+  startAbductionMusic()   // trilha cômica
   raf = requestAnimationFrame(frame)
 })
 
@@ -457,6 +458,7 @@ onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', kd)
   window.removeEventListener('keyup', ku)
+  stopMusic()
 })
 </script>
 
