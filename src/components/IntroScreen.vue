@@ -214,10 +214,10 @@ onUnmounted(() => {
 
 .intro-moon {
   position: absolute;
-  top: 26px;
-  right: 34px;
-  width: 58px;
-  height: 58px;
+  top: 20px;
+  left: 18px;
+  width: 52px;
+  height: 52px;
   filter: drop-shadow(0 0 14px rgba(246, 243, 232, 0.45));
 }
 .intro-moon svg {
@@ -230,7 +230,7 @@ onUnmounted(() => {
 .intro-scene {
   position: absolute;
   left: 14px;
-  bottom: 10px;
+  bottom: 44px;
   width: 150px;
   height: 150px;
   filter: drop-shadow(0 0 10px rgba(255, 210, 90, 0.25));
@@ -295,7 +295,7 @@ onUnmounted(() => {
 .intro-skip {
   position: absolute;
   right: 12px;
-  bottom: 12px;
+  top: 12px;
   padding: 8px 14px;
   font-family: 'VT323', monospace;
   font-size: 1.1rem;
