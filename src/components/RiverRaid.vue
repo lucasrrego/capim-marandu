@@ -8,10 +8,11 @@ import BossBattle from './BossBattle.vue'
 import BattleTransition from './BattleTransition.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
+import MinigamesMenu from './MinigamesMenu.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
 import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
-import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady } from '../audio/sfx.js'
+import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady, startGameMusic, stopMusic } from '../audio/sfx.js'
 import { drawSprite, SATELLITE, SPACE_JUNK } from '../data/pixelSprites.js'
 import { unlock as unlockAchievement } from '../data/achievements.js'
 import { slotKey, setSlot } from '../data/saves.js'
@@ -24,9 +25,10 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'moon' | 'achievements' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'minigames' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'moon' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
-let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
+let minigameFromStart = false        // true quando o minigame foi aberto pelo menu (teste, sem corrida)
+let bossFromMenu = false             // true quando o chefe foi aberto pelo menu de mini-games
 const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
@@ -218,7 +220,7 @@ watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(slotKey('e
 
 // Nos primeiros INTRO_MS o canal fica totalmente aberto (margens só nas bordas
 // da tela), dando folga perto do spawn antes das paredes começarem a fechar.
-const INTRO_MS = 10000
+const INTRO_MS = 5000
 const OPEN_LEFT = MARGIN
 const OPEN_RIGHT = W - MARGIN
 
@@ -1021,6 +1023,7 @@ function frame(ts) {
   if (dt > 0.05) dt = 0.05
 
   if (phase.value === 'playing' && !transition.value) {
+    startGameMusic()   // trilha de aventura (idempotente; religa ao entrar no jogo)
     // canvas remonta ao voltar de fases que trocam a view (ex.: moon) → reobtém o ctx
     if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
     update(dt, state)
@@ -1028,6 +1031,7 @@ function frame(ts) {
   } else {
     if (phase.value !== 'moon') setThrust(false)   // na Lua quem controla a propulsão é o MoonLanding
     stopPlasmaCharge()   // pausado / hangar / moon / fim → sem zumbido de carga
+    if (phase.value === 'over' || phase.value === 'won') stopMusic()   // fim de jogo → silêncio
   }
   raf = requestAnimationFrame(frame)
 }
@@ -1069,7 +1073,7 @@ function onMoonCrash() {
 
 // sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
 function leaveMoon() {
-  phase.value = moonFromStart ? 'start' : 'hangar'
+  phase.value = moonFromStart ? 'minigames' : 'hangar'
 }
 
 function playIntro() {
@@ -1132,11 +1136,23 @@ function enterMinigame(warp) {
   phase.value = 'minigame'
 }
 
-// Acesso direto pela tela inicial (sem precisar colidir com o warp).
+// Acesso direto pelo menu de mini-games (sem precisar colidir com o warp).
 function openAbduction() {
   minigameFromStart = true
   activeMinigame.value = { segment: 1, color: '#37e0a0', game: 'abduction' }
   phase.value = 'minigame'
+}
+
+// Menu de mini-games (a partir da tela inicial)
+function openMinigamesMenu() {
+  phase.value = 'minigames'
+}
+
+// Lança um mini-game em modo avulso (volta pro menu ao terminar).
+function launchMinigame(id) {
+  if (id === 'abduction') openAbduction()
+  else if (id === 'moon') enterMoon(true)
+  else if (id === 'boss') { bossFromMenu = true; playTransition('boss') }
 }
 
 const WARP_INVULN = 2000   // ms de invuln ao voltar do warp (não explode na parede)
@@ -1166,11 +1182,13 @@ function onTransitionDone() {
 
 // ---- Chefe (metade do percurso) ----
 function enterBoss() {
+  bossFromMenu = false
   playTransition('boss')
 }
 
 // venceu o chefe: recompensa entra na corrida e o percurso continua
 function onBossCleared(coins) {
+  if (bossFromMenu) { bossFromMenu = false; phase.value = 'minigames'; return }
   const n = Math.floor(coins || 0)
   if (n > 0) {
     state.runCoins += n
@@ -1182,6 +1200,7 @@ function onBossCleared(coins) {
 
 // perdeu pro chefe: encerra a corrida (game over)
 function onBossFailed() {
+  if (bossFromMenu) { bossFromMenu = false; phase.value = 'minigames'; return }
   state.over = true
   settleRun(shipStats.deathKeep)
   tallyLoss()
@@ -1193,7 +1212,7 @@ function onBossFailed() {
 function leaveMinigame() {
   if (minigameFromStart) {
     minigameFromStart = false
-    phase.value = 'start'
+    phase.value = 'minigames'
   } else {
     exitMinigame()
   }
@@ -1231,6 +1250,7 @@ function onKey(e, down) {
   }
   if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements' || phase.value === 'saves')) phase.value = 'start'
   if (k === 'escape' && down && (phase.value === 'playing' || phase.value === 'paused')) togglePause()
+  if (k === 'n' && down) addCoins(1000)   // atalho secreto: +1000 moedas
 }
 
 const kd = (e) => onKey(e, true)
@@ -1278,6 +1298,7 @@ onUnmounted(() => {
   if (fireHold) clearInterval(fireHold)
   setThrust(false)
   stopPlasmaCharge()
+  stopMusic()
 })
 </script>
 
@@ -1308,9 +1329,15 @@ onUnmounted(() => {
           class="rr-hangar"
           @play="playIntro"
           :dev="isDev"
-          @minigame="openAbduction"
+          @minigames="openMinigamesMenu"
         />
-        <button v-if="phase === 'start' && isDev" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
+
+        <MinigamesMenu
+          v-else-if="phase === 'minigames'"
+          class="rr-hangar"
+          @select="launchMinigame"
+          @back="phase = 'start'"
+        />
 
         <SaveScreen
           v-else-if="phase === 'saves'"

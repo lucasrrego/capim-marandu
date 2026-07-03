@@ -4,6 +4,7 @@
 // perseguem o jogador. O jogador (a nave montada) atira pra cima até zerar o HP.
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { buildShipStats, drawShip } from '../data/shipParts.js'
+import { startBossMusic, stopMusic } from '../audio/sfx.js'
 import { drawSprite, spriteSize, MAGNATA } from '../data/pixelSprites.js'
 import BattleTransition from './BattleTransition.vue'
 
@@ -224,11 +225,13 @@ function updateParticles(dt) {
 
 function win() {
   result.value = 'win'
+  stopMusic()   // encerra a tensão
   boom(s.boss.x, BOSS_Y, '#ffcf3a', 40)
   boom(s.boss.x, BOSS_Y, '#ff5230', 40)
 }
 function lose() {
   result.value = 'lose'
+  stopMusic()
 }
 
 // ---- Render -------------------------------------------------------------
@@ -354,6 +357,7 @@ function startFight() {
   s = newState()
   emit('hp', playerHp.value)   // valor inicial pra barra lateral
   last = 0
+  startBossMusic()   // trilha tensa de chefão (começa junto com a luta)
   raf = requestAnimationFrame(frame)
 }
 
@@ -371,6 +375,7 @@ onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', kd)
   window.removeEventListener('keyup', ku)
+  stopMusic()
 })
 </script>
 
