@@ -149,6 +149,25 @@ export function playWrench() {
   clunk.stop(t2 + 0.14)
 }
 
+/**
+ * Sting de início de batalha (estilo Pokémon): alarme urgente + corrida
+ * ascendente sobre um baixo pulsante. Toca durante a máscara de transição.
+ */
+export function playBattleStart() {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const t = c.currentTime + 0.001
+  // alarme: duas notas alternadas, rápidas e tensas
+  const alarm = [79, 74, 79, 74, 79, 74]
+  alarm.forEach((n, i) => tone(midiToFreq(n), t + i * 0.075, 0.07, 'square', 0.26))
+  // corrida ascendente entrando na luta
+  const run = [55, 60, 64, 67, 72, 76, 79, 84]
+  run.forEach((n, i) => tone(midiToFreq(n), t + 0.48 + i * 0.05, 0.12, 'square', 0.28))
+  // baixo pulsante marcando o clímax
+  for (let i = 0; i < 3; i++) tone(midiToFreq(36), t + i * 0.28, 0.26, 'triangle', 0.26)
+}
+
 /** Coleta de combustível (blip arcade tipo "moeda", subindo). */
 export function playFuel() {
   playBlip({ notes: [84, 91], type: 'square', gain: 0.3, step: 0.07, dur: 0.13 })

@@ -5,6 +5,7 @@ import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import AbductionGame from './AbductionGame.vue'
 import BossBattle from './BossBattle.vue'
+import BattleTransition from './BattleTransition.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import MinigamesMenu from './MinigamesMenu.vue'
@@ -32,6 +33,9 @@ const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
 const bossHp = ref(0)        // HP do jogador durante a luta contra o chefe (barra lateral)
+const transition = ref(false)  // máscara de transição ativa (entra/sai da arena do chefe)
+const transitionJingle = ref('battle')  // 'battle' toca o sting; 'none' silêncio
+let pendingPhase = null        // fase a assumir quando a máscara cobrir a tela
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
 const progressPct = ref(0)             // % da distância total percorrida
@@ -1018,7 +1022,7 @@ function frame(ts) {
   last = ts
   if (dt > 0.05) dt = 0.05
 
-  if (phase.value === 'playing') {
+  if (phase.value === 'playing' && !transition.value) {
     startGameMusic()   // trilha de aventura (idempotente; religa ao entrar no jogo)
     // canvas remonta ao voltar de fases que trocam a view (ex.: moon) → reobtém o ctx
     if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
@@ -1148,7 +1152,7 @@ function openMinigamesMenu() {
 function launchMinigame(id) {
   if (id === 'abduction') openAbduction()
   else if (id === 'moon') enterMoon(true)
-  else if (id === 'boss') { bossFromMenu = true; phase.value = 'boss' }
+  else if (id === 'boss') { bossFromMenu = true; playTransition('boss') }
 }
 
 const WARP_INVULN = 2000   // ms de invuln ao voltar do warp (não explode na parede)
@@ -1159,10 +1163,27 @@ function exitMinigame() {
   last = 0
 }
 
+// ---- Transição estilo Pokémon (entra/sai da arena do chefe) ----
+function playTransition(next, jingle = 'battle') {
+  pendingPhase = next
+  transitionJingle.value = jingle
+  transition.value = true
+}
+// máscara cobriu a tela → troca a cena por baixo dela
+function onTransitionCovered() {
+  if (pendingPhase == null) return
+  phase.value = pendingPhase
+  if (pendingPhase === 'playing') last = 0
+  pendingPhase = null
+}
+function onTransitionDone() {
+  transition.value = false
+}
+
 // ---- Chefe (metade do percurso) ----
 function enterBoss() {
   bossFromMenu = false
-  phase.value = 'boss'
+  playTransition('boss')
 }
 
 // venceu o chefe: recompensa entra na corrida e o percurso continua
@@ -1174,8 +1195,7 @@ function onBossCleared(coins) {
     runCoins.value = state.runCoins
   }
   state.invuln = Math.max(state.invuln, WARP_INVULN)
-  phase.value = 'playing'
-  last = 0
+  playTransition('playing', 'none')
 }
 
 // perdeu pro chefe: encerra a corrida (game over)
@@ -1185,7 +1205,7 @@ function onBossFailed() {
   settleRun(shipStats.deathKeep)
   tallyLoss()
   lives.value = 0
-  phase.value = 'over'
+  playTransition('over', 'none')
 }
 
 // Volta do minigame: pra tela inicial se veio de lá, senão retoma o percurso.
@@ -1398,6 +1418,13 @@ onUnmounted(() => {
           <span class="rr-progress-flag">🏁</span>
         </div>
         </template>
+
+        <BattleTransition
+          v-if="transition"
+          :jingle="transitionJingle"
+          @covered="onTransitionCovered"
+          @done="onTransitionDone"
+        />
       </div>
 
       <aside class="rr-panel">
