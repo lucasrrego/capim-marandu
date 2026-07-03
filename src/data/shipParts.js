@@ -12,15 +12,10 @@ export const SHIP_PARTS = {
     { id: 'wide', name: 'Larga', desc: 'Manobra lenta, +1 vida', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82, lifeBonus: 1 },
     { id: 'delta', name: 'Delta', desc: 'Manobra rápida, −1 vida', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.25, lifeBonus: -1 },
   ],
-  body: [
-    { id: 'std', name: 'Leve', desc: 'Fuselagem compacta', color: '#f4f4f4', armor: 1, fuelUse: 1 },
-    { id: 'heavy', name: 'Blindado', desc: 'Aguenta mais impacto', color: '#b8bcc8', armor: 1.4, fuelUse: 1.15 },
-    { id: 'stream', name: 'Aerodinâmico', desc: 'Menos consumo de combustível', color: '#e8eef8', armor: 0.85, fuelUse: 0.82 },
-  ],
   nose: [
-    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', damageMul: 1, hitboxW: 1 },
-    { id: 'sharp', name: 'Agulha', desc: '+15% dano nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', damageMul: 1.15, hitboxW: 1 },
-    { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
+    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', coinMul: 1, fuelPickupMul: 1 },
+    { id: 'sharp', name: 'Agulha', desc: '+25% moedas nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', coinMul: 1.25, fuelPickupMul: 1 },
+    { id: 'blunt', name: 'Rombo', desc: '+25% combustível nos tanques F', shape: 'blunt', length: -2, tipColor: '#d0d0d0', coinMul: 1, fuelPickupMul: 1.25 },
   ],
   engine: [
     { id: 'std', name: 'Turbo', desc: 'Velocidade e consumo equilibrados', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelUse: 1, accelMul: 1, cruiseMul: 1 },
@@ -34,11 +29,61 @@ export const SHIP_PARTS = {
   ],
 }
 
+// Corpo = trilhas de upgrade incrementais compradas com moedas.
+// cost(lvl) = custo em moedas para subir de `lvl` para `lvl+1`.
+export const BODY_COLOR = '#b8bcc8'
+export const BODY_TRACKS = [
+  {
+    key: 'fuel',
+    label: 'Tanque',
+    desc: '+combustível máximo por nível',
+    max: 5,
+    fuelPerLevel: 20,
+    cost: (lvl) => 3 + lvl * 2,
+  },
+  {
+    key: 'shield',
+    label: 'Escudo',
+    desc: 'Anula 1 impacto por nível',
+    max: 3,
+    cost: (lvl) => 6 + lvl * 4,
+  },
+  {
+    key: 'save',
+    label: 'Cofre',
+    desc: '-5% de perda de moedas ao morrer',
+    max: 10,
+    cost: (lvl) => 4 + lvl * 2,
+  },
+]
+
+// Perda de moedas ao morrer: 75% base, -5% por nível de Cofre, mínimo 25%.
+const BASE_DEATH_KEEP = 0.25
+const DEATH_KEEP_PER_LEVEL = 0.05
+const MAX_DEATH_KEEP = 0.75
+
+const DEFAULT_BODY = { fuel: 0, shield: 0, save: 0 }
+
+// Motor = peça discreta + trilha de upgrade incremental comprada com moedas.
+export const ENGINE_SPEED_PER_LEVEL = 0.15
+export const ENGINE_TRACKS = [
+  {
+    key: 'speed',
+    label: 'Turbina',
+    desc: '+velocidade máxima por nível',
+    max: 3,
+    cost: (lvl) => 4 + lvl * 3,
+  },
+]
+
+const DEFAULT_ENGINE_UP = { speed: 0 }
+
 export const DEFAULT_LOADOUT = {
   wing: 'std',
-  body: 'std',
+  body: { ...DEFAULT_BODY },
   nose: 'std',
   engine: 'std',
+  engineUp: { ...DEFAULT_ENGINE_UP },
   weapon: 'cannon',
 }
 
@@ -46,10 +91,15 @@ export function getPart(category, id) {
   return SHIP_PARTS[category].find((p) => p.id === id) ?? SHIP_PARTS[category][0]
 }
 
+export function resolveBody(body) {
+  const levels = { ...DEFAULT_BODY, ...(body ?? {}) }
+  return { levels, color: BODY_COLOR }
+}
+
 export function resolveLoadout(loadout = DEFAULT_LOADOUT) {
   return {
     wing: getPart('wing', loadout.wing),
-    body: getPart('body', loadout.body),
+    body: resolveBody(loadout.body),
     nose: getPart('nose', loadout.nose),
     engine: getPart('engine', loadout.engine),
     weapon: getPart('weapon', loadout.weapon),
@@ -57,28 +107,34 @@ export function resolveLoadout(loadout = DEFAULT_LOADOUT) {
 }
 
 const BASE_LIVES = 3
+const BASE_FUEL = 100
+const FUEL_PER_LEVEL = 20
 const PLAYER_W = 26
 const PLAYER_H = 32
 
 export function buildShipStats(loadout) {
   const p = resolveLoadout(loadout)
-  let startLives = BASE_LIVES + (p.wing.lifeBonus ?? 0)
-  if (p.body.armor >= 1.3) startLives += 1
-  startLives = Math.max(1, startLives)
+  const engineUp = { ...DEFAULT_ENGINE_UP, ...(loadout.engineUp ?? {}) }
+  const startLives = Math.max(1, BASE_LIVES + (p.wing.lifeBonus ?? 0))
   return {
     agility: p.wing.agility,
     lifeBonus: p.wing.lifeBonus ?? 0,
-    armor: p.body.armor,
-    fuelUse: p.body.fuelUse * (p.engine.fuelUse ?? 1),
-    maxSpeedMul: p.engine.maxSpeed,
+    armor: 1,
+    fuelMax: BASE_FUEL + (p.body.levels.fuel ?? 0) * FUEL_PER_LEVEL,
+    shield: p.body.levels.shield ?? 0,
+    deathKeep: Math.min(MAX_DEATH_KEEP, BASE_DEATH_KEEP + (p.body.levels.save ?? 0) * DEATH_KEEP_PER_LEVEL),
+    fuelUse: p.engine.fuelUse ?? 1,
+    maxSpeedMul: p.engine.maxSpeed + engineUp.speed * ENGINE_SPEED_PER_LEVEL,
     accelMul: p.engine.accelMul ?? 1,
     cruiseMul: p.engine.cruiseMul ?? 1,
     fireCd: p.weapon.fireCd,
-    damage: p.weapon.damage * (p.nose.damageMul ?? 1),
+    damage: p.weapon.damage,
+    coinMul: p.nose.coinMul ?? 1,
+    fuelPickupMul: p.nose.fuelPickupMul ?? 1,
     bulletW: p.weapon.bulletW,
     bulletH: p.weapon.bulletH,
     bulletColor: p.weapon.bulletColor,
-    hitboxW: Math.round(PLAYER_W * (p.nose.hitboxW ?? 1)),
+    hitboxW: PLAYER_W,
     hitboxH: PLAYER_H,
     startLives,
   }
