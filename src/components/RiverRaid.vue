@@ -4,6 +4,7 @@ import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import AbductionGame from './AbductionGame.vue'
+import MarioGame from './MarioGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
@@ -1096,6 +1097,15 @@ function openAbduction() {
   phase.value = 'minigame'
 }
 
+function openMario() {
+  minigameFromStart = true
+  activeMinigame.value = { segment: 1, color: '#ff4d4d', game: 'mario' }
+  phase.value = 'minigame'
+}
+
+// mapa nome → componente do minigame (tipos não mapeados caem no placeholder)
+const MINIGAMES = { abduction: AbductionGame, mario: MarioGame }
+
 function exitMinigame() {
   phase.value = 'playing'
   last = 0
@@ -1220,6 +1230,7 @@ onUnmounted(() => {
           @play="playIntro"
           :dev="isDev"
           @minigame="openAbduction"
+          @mario="openMario"
         />
         <button v-if="phase === 'start' && isDev" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
 
@@ -1248,7 +1259,7 @@ onUnmounted(() => {
         />
 
         <component
-          :is="activeMinigame.game === 'abduction' ? AbductionGame : MinigameScreen"
+          :is="MINIGAMES[activeMinigame.game] ?? MinigameScreen"
           v-else-if="phase === 'minigame'"
           class="rr-hangar"
           :segment="activeMinigame.segment"
