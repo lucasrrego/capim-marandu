@@ -2,15 +2,16 @@
 // Boss no meio do percurso — batalha estilo 1942.
 // A nave inimiga oscila no topo, atira tiros retos e solta mini-bombas que
 // perseguem o jogador. O jogador (a nave montada) atira pra cima até zerar o HP.
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { buildShipStats, drawShip } from '../data/shipParts.js'
 
 const props = defineProps({
   loadout: { type: Object, required: true },
   width: { type: Number, default: 480 },
   height: { type: Number, default: 640 },
+  short: { type: Boolean, default: false },   // corrida curta → chefe com 1/3 do HP
 })
-const emit = defineEmits(['cleared', 'failed'])
+const emit = defineEmits(['cleared', 'failed', 'hp'])
 
 // ---- Tuning -------------------------------------------------------------
 const BOSS_HP = 120
@@ -31,6 +32,7 @@ const REWARD = 60              // moedas ao vencer
 const W = props.width
 const H = props.height
 const stats = buildShipStats(props.loadout)
+const MAX_HP = props.short ? 12 : BOSS_HP   // teste: chefe morre rápido
 
 const PW = 30
 const PH = 36
@@ -38,6 +40,9 @@ const PH = 36
 const bossHpPct = ref(100)
 const playerHp = ref(3 + stats.shield)
 const result = ref(null)       // null | 'win' | 'lose'
+
+// HP do jogador no chefe é mostrado na barra lateral (VIDAS), não no topo
+watch(playerHp, (v) => emit('hp', v))
 
 const canvas = ref(null)
 let ctx = null
@@ -53,7 +58,7 @@ function rand(a, b) { return a + Math.random() * (b - a) }
 function newState() {
   return {
     time: 0,
-    boss: { x: W / 2, hp: BOSS_HP, shootCd: SHOOT_CD, bombCd: BOMB_CD, flash: 0 },
+    boss: { x: W / 2, hp: MAX_HP, shootCd: SHOOT_CD, bombCd: BOMB_CD, flash: 0 },
     player: { x: W / 2 - PW / 2, y: H - 110, invuln: 0, fireCd: 0 },
     bullets: [],       // tiros do jogador (sobem)
     ebullets: [],      // tiros retos do boss (descem)
@@ -177,7 +182,7 @@ function update(dt) {
     }
   }
   s.bullets = s.bullets.filter((bl) => bl.y > -100)
-  bossHpPct.value = Math.max(0, Math.round((b.hp / BOSS_HP) * 100))
+  bossHpPct.value = Math.max(0, Math.round((b.hp / MAX_HP) * 100))
 
   // dano no player (tiros retos + bombas)
   const pr = { x: p.x + 4, y: p.y + 4, w: PW - 8, h: PH - 8 }
@@ -327,6 +332,7 @@ function finish() {
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
   s = newState()
+  emit('hp', playerHp.value)   // valor inicial pra barra lateral
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
   raf = requestAnimationFrame(frame)
@@ -354,10 +360,6 @@ onUnmounted(() => {
     <div class="boss-hud">
       <span class="boss-label">CHEFE</span>
       <div class="boss-bar"><div class="boss-bar-fill" :style="{ width: bossHpPct + '%' }"></div></div>
-      <span class="boss-hearts">
-        <span v-for="n in playerHp" :key="n">❤️</span>
-        <span v-if="playerHp <= 0">—</span>
-      </span>
     </div>
 
     <div v-if="result === 'win'" class="boss-overlay">

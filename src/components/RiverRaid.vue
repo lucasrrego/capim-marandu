@@ -24,6 +24,7 @@ let minigameFromStart = false        // true quando o minigame foi aberto pela t
 const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
+const bossHp = ref(0)        // HP do jogador durante a luta contra o chefe (barra lateral)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
 const progressPct = ref(0)             // % da distância total percorrida
@@ -41,6 +42,7 @@ const displayLives = computed(() => {
   if (phase.value === 'start' || phase.value === 'hangar') {
     return buildShipStats(hangarLoadout.value).startLives
   }
+  if (phase.value === 'boss') return bossHp.value   // no chefe, VIDAS = HP da batalha
   return lives.value
 })
 
@@ -993,6 +995,15 @@ function enterMoon(fromStart = false) {
   phase.value = 'moon'
 }
 
+// bateu no pouso = corrida encerrada (mesmo com vidas sobrando)
+function onMoonCrash() {
+  if (moonFromStart) return          // teste pela tela inicial: sem corrida pra encerrar
+  state.over = true
+  settleRun(shipStats.deathKeep)
+  tallyLoss()
+  lives.value = 0
+}
+
 // sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
 function leaveMoon() {
   phase.value = moonFromStart ? 'start' : 'hangar'
@@ -1022,6 +1033,7 @@ function startGame(payload) {
   state = newState()
   // define o comprimento do percurso conforme o modo
   const goal = short ? SHORT_GOAL : LONG_GOAL
+  state.short = short
   state.goal = goal
   state.warpInterval = goal / (WARP_SEGMENTS + 1)
   state.nextWarpAt = goal / (WARP_SEGMENTS + 1)
@@ -1195,6 +1207,7 @@ onUnmounted(() => {
           :height="H"
           @reward="addCoins"
           @landed="onLanded"
+          @crashed="onMoonCrash"
           @fuel="fuelPct = $event"
           @speed="speedLabel = $event"
           @exit="leaveMoon"
@@ -1255,6 +1268,8 @@ onUnmounted(() => {
           :loadout="hangarLoadout"
           :width="W"
           :height="H"
+          :short="state?.short"
+          @hp="bossHp = $event"
           @cleared="onBossCleared"
           @failed="onBossFailed"
         />

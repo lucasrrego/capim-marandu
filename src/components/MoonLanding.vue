@@ -16,7 +16,7 @@ const props = defineProps({
   width: { type: Number, default: 480 },
   height: { type: Number, default: 640 },
 })
-const emit = defineEmits(['exit', 'reward', 'fuel', 'speed', 'landed'])
+const emit = defineEmits(['exit', 'reward', 'fuel', 'speed', 'landed', 'crashed'])
 
 const W = props.width
 const H = props.height
@@ -191,6 +191,7 @@ function touchdown(s) {
     }
     s.boom = 1
     stage.value = 'crashed'
+    emit('crashed')
   }
 }
 
@@ -235,6 +236,7 @@ function update(dt, s) {
         result.value = { reason: 'Bateu num prédio! Desça pelo corredor da plataforma.' }
         s.boom = 1
         stage.value = 'crashed'
+        emit('crashed')
         return
       }
     }
@@ -505,7 +507,7 @@ onUnmounted(() => {
   <div v-else-if="stage === 'crashed'" class="ml-overlay">
     <h2>💥 Explodiu!</h2>
     <p>{{ result?.reason }}</p>
-    <button @click="begin">↻ Tentar de novo</button>
+    <button @click="emit('exit')">↩ Voltar ao hangar</button>
   </div>
 </template>
 
