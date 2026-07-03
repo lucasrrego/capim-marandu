@@ -231,6 +231,10 @@ function stepGen(g) {
 }
 
 function newState() {
+  // sorteia qual warp (1..5) vira cada minigame, sempre em warps diferentes
+  const abductionSegment = Math.floor(rand(1, 6))
+  let marioSegment = Math.floor(rand(1, 5))
+  if (marioSegment >= abductionSegment) marioSegment++
   const gen = makeGen()
   const rows = []
   for (let i = 0; i < N_ROWS; i++) {
@@ -294,7 +298,8 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
-    abductionSegment: Math.floor(rand(1, 6)),   // qual warp (1..5) vira o minigame da abdução
+    abductionSegment,
+    marioSegment,
     coinAcc: 0,
     runCoins: 0,
     fuelKills: 0,
@@ -1084,7 +1089,9 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  const game = warp.segment === state.abductionSegment ? 'abduction' : 'placeholder'
+  const game = warp.segment === state.abductionSegment ? 'abduction'
+    : warp.segment === state.marioSegment ? 'mario'
+    : 'placeholder'
   minigameFromStart = false
   activeMinigame.value = { segment: warp.segment, color: warp.color, game }
   phase.value = 'minigame'

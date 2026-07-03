@@ -4,18 +4,21 @@ import {
   drawSprite, spriteSize,
   GUGU, ALIEN_WALKER, SATELLITE, PLAYER_STAR,
 } from '../data/pixelSprites.js'
-import { resume, playBlip, playSparkle, playExplosion, playDodge } from '../audio/sfx.js'
+import { DEFAULT_LOADOUT, drawShip } from '../data/shipParts.js'
+import { resume, playBlip, playSparkle, playExplosion, playDodge, playSuccess } from '../audio/sfx.js'
 
 const props = defineProps({
   segment: { type: Number, default: 1 },
   color: { type: String, default: '#ff4d4d' },
-  loadout: { type: Object, default: () => ({}) },
+  loadout: { type: Object, default: () => ({ ...DEFAULT_LOADOUT }) },
 })
 const emit = defineEmits(['earn', 'back'])
 
 // ============================================================================
 //  CALIBRAÇÃO — mexa só aqui pra ajustar a jogabilidade. Tudo em px/s e s.
-//  Tela congelada (uma tela só, sem rolagem) pra testar o feeling do pulo.
+//  História: a caminho da Lua, Gugu precisa ir ao banheiro. Pouso de
+//  emergência! Colete os rolos de papel espalhados, use o banheiro e suba
+//  de volta pra nave pela escada.
 // ============================================================================
 const TUNING = {
   player: {
@@ -37,7 +40,8 @@ const TUNING = {
     satSpeed: 1.6,      // rad/s da oscilação do satélite
     satRange: 150,      // amplitude horizontal do voo do satélite
   },
-  coinValue: 1,         // moedas ganhas por moeda coletada
+  bathroomS: 2.2,       // tempo "ocupado" dentro do banheiro
+  climbSpeed: 150,      // subida automática pela escada da nave
   lives: 3,
 }
 // ============================================================================
@@ -52,7 +56,6 @@ const ALIEN_SCALE = 3
 const ALIEN_SIZE = spriteSize(ALIEN_WALKER, ALIEN_SCALE)   // 36x30
 const SAT_SCALE = 2
 const SAT_SIZE = spriteSize(SATELLITE, SAT_SCALE)          // 30x16
-const NEY_SIZE = spriteSize(PLAYER_STAR, 2)                // 16x30 (deitado: 30x16)
 
 const SPAWN = { x: 36, y: GROUND_TOP - GUGU_SIZE.h }
 
@@ -68,32 +71,52 @@ const SOLIDS = [
 // Neymar caído no gramado (mesmo craque do minigame da Vó Baiana)
 const NEY = { x: 396, y: GROUND_TOP - 16, w: 30, h: 16 }
 
-function makeCoins() {
+// Banheiro (cabine) na plataforma do topo — destino da "missão número 2"
+const BATH = { x: 236, y: 248, w: 42, h: 48 }
+
+// Nave do Gugu pairando sobre a fase, sempre visível. A escada desce dela
+// até a plataforma do topo depois que o banheiro for usado.
+const SHIP = { cx: 208, cy: 88, w: 46, h: 58 }
+const LADDER = { x: SHIP.cx, top: SHIP.cy + 26, bottom: 296 }
+
+function makePapers() {
   const spots = [
-    [120, 436], [152, 436],                      // sobre a plataforma 1
-    [340, 356], [372, 356],                      // sobre a plataforma 2
-    [176, 260], [208, 260], [240, 260],          // sobre a plataforma 3
+    [120, 436], [152, 436],                          // sobre a plataforma 1
+    [340, 356], [372, 356],                          // sobre a plataforma 2
+    [140, 260], [172, 260], [204, 260],              // sobre a plataforma 3
     [250, GROUND_TOP - 40], [290, GROUND_TOP - 40],  // no chão
   ]
   return spots.map(([x, y]) => ({ x, y, r: 7, taken: false }))
 }
+const PAPER_TOTAL = makePapers().length
 
 function makeEnemies() {
   return [
     // aliens rastejantes (patrulham entre minX e maxX, como goombas)
     { kind: 'alien', x: 200, y: GROUND_TOP - ALIEN_SIZE.h, w: ALIEN_SIZE.w, h: ALIEN_SIZE.h, dir: 1, minX: 90, maxX: W - 60 - ALIEN_SIZE.w, alive: true },
-    { kind: 'alien', x: 160, y: 296 - ALIEN_SIZE.h, w: ALIEN_SIZE.w, h: ALIEN_SIZE.h, dir: -1, minX: 132, maxX: 284 - ALIEN_SIZE.w, alive: true },
+    { kind: 'alien', x: 160, y: 296 - ALIEN_SIZE.h, w: ALIEN_SIZE.w, h: ALIEN_SIZE.h, dir: -1, minX: 132, maxX: BATH.x - ALIEN_SIZE.w, alive: true },
     // satélite malvado voando em vai-e-vem senoidal
     { kind: 'sat', cx: 240, y: 180, w: SAT_SIZE.w, h: SAT_SIZE.h, x: 240, phase: 0, alive: true },
   ]
 }
 
 // ---- Estado reativo (HUD) -------------------------------------------------
-const sub = ref('playing')        // 'playing' | 'over'
-const coins = ref(0)
+const sub = ref('cutscene')       // 'cutscene' | 'playing' | 'won' | 'over'
+const step = ref(0)
+const papel = ref(0)
 const lives = ref(TUNING.lives)
 
+// Cutscene na voz do Gugu (ver docs/character-gugu.md: frases curtas,
+// deslumbre, jargão de engenheiro + ingenuidade)
+const speech = [
+  'Ops... que aperto é esse na barriga? Ah não. AH NÃO!',
+  'Preciso de um banheiro AGORA! Pouso de emergência naquele planetinha!',
+  'Xii... a turbulência espalhou meu papel higiênico pela fase toda!',
+  'Plano de voo: catar os rolos, correr pro banheiro e subir de volta pra nave. Missão número 2!',
+]
+
 const canvas = ref(null)
+const guguCanvas = ref(null)
 let ctx = null
 let raf = 0
 let last = 0
@@ -110,8 +133,12 @@ function newGame() {
       invuln: 0,
     },
     enemies: makeEnemies(),
-    coins: makeCoins(),
+    papers: makePapers(),
     time: 0,
+    using: 0,       // s restantes "ocupado" no banheiro
+    used: false,    // já foi ao banheiro → escada da nave desce
+    boarding: false, // subindo a escada (sem controle, sem dano)
+    hintT: 0,       // s restantes do aviso "falta papel!"
     neyBubble: 0,   // ms restantes do balão do craque caído
   }
 }
@@ -200,8 +227,33 @@ function damagePlayer(s) {
 function update(dt, s) {
   s.time += dt
   if (s.neyBubble > 0) s.neyBubble -= dt * 1000
+  if (s.hintT > 0) s.hintT -= dt
   const p = s.player
   if (p.invuln > 0) p.invuln -= dt
+
+  // subindo a escada da nave: sem controle, sem dano, só sobe
+  if (s.boarding) {
+    p.x += (LADDER.x - p.w / 2 - p.x) * Math.min(1, dt * 10)
+    p.y -= TUNING.climbSpeed * dt
+    if (p.y + p.h <= SHIP.cy + 20) {
+      sub.value = 'won'
+      resume()
+      playSuccess()
+    }
+    return
+  }
+
+  // ocupado no banheiro: mundo espera (educadamente)
+  if (s.using > 0) {
+    s.using -= dt
+    if (s.using <= 0) {
+      s.using = 0
+      s.used = true
+      resume()
+      playSuccess()
+    }
+    return
+  }
 
   movePlayer(dt, s)
 
@@ -233,15 +285,37 @@ function update(dt, s) {
     }
   }
 
-  // moedas
-  for (const c of s.coins) {
+  // rolos de papel higiênico
+  for (const c of s.papers) {
     if (c.taken) continue
     const box = { x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 }
     if (hit(p, box)) {
       c.taken = true
-      coins.value += TUNING.coinValue
+      papel.value++
       resume()
       playSparkle()
+    }
+  }
+
+  // chegou no banheiro: com todos os rolos entra; senão, avisa
+  if (!s.used && hit(p, BATH)) {
+    if (papel.value >= PAPER_TOTAL) {
+      s.using = TUNING.bathroomS
+      p.vx = 0
+      resume()
+      playBlip({ notes: [520, 390, 260], type: 'triangle', gain: 0.25, step: 0.07 })
+    } else if (s.hintT <= 0) {
+      s.hintT = 1.6
+    }
+  }
+
+  // escada liberada: encostou nela → embarque automático
+  if (s.used && !s.boarding) {
+    const rail = { x: LADDER.x - 12, y: LADDER.top, w: 24, h: LADDER.bottom - LADDER.top }
+    if (hit(p, rail)) {
+      s.boarding = true
+      p.vx = 0
+      p.vy = 0
     }
   }
 
@@ -298,18 +372,107 @@ function drawBrickBlock(b) {
   ctx.fillRect(b.x, b.y, b.w, 3)
 }
 
-function drawCoin(s, c) {
-  // moeda girando (escala horizontal senoidal)
-  const squash = Math.abs(Math.sin(s.time * 4 + c.x))
-  ctx.save()
-  ctx.translate(c.x, c.y)
-  ctx.scale(0.35 + 0.65 * squash, 1)
-  ctx.fillStyle = '#ffd24d'
-  ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI * 2); ctx.fill()
-  ctx.strokeStyle = '#b8860b'
-  ctx.lineWidth = 2
+function drawPaper(s, c) {
+  // rolo de papel higiênico flutuando (bob leve)
+  const y = c.y + Math.sin(s.time * 3 + c.x) * 2
+  ctx.fillStyle = '#f4f4f4'
+  ctx.beginPath(); ctx.arc(c.x, y, c.r, 0, Math.PI * 2); ctx.fill()
+  ctx.strokeStyle = '#b8bcc8'
+  ctx.lineWidth = 1.5
   ctx.stroke()
+  // furo do rolo
+  ctx.fillStyle = '#b8bcc8'
+  ctx.beginPath(); ctx.arc(c.x, y, c.r * 0.4, 0, Math.PI * 2); ctx.fill()
+  // pontinha solta do papel
+  ctx.fillStyle = '#f4f4f4'
+  ctx.fillRect(c.x + c.r - 2, y - 1, 6, 3)
+}
+
+function drawBathroom(s) {
+  const b = BATH
+  const ready = !s.used && papel.value >= PAPER_TOTAL
+  ctx.save()
+  if (ready) {
+    // brilha convidando quando dá pra entrar
+    ctx.shadowColor = '#ffd24d'
+    ctx.shadowBlur = 10 + 6 * Math.sin(s.time * 5)
+  }
+  // cabine de madeira
+  ctx.fillStyle = '#8a5a3b'
+  ctx.fillRect(b.x, b.y, b.w, b.h)
+  ctx.strokeStyle = '#5c3a24'
+  ctx.lineWidth = 2
+  ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2)
+  // telhado
+  ctx.fillStyle = '#5c3a24'
+  ctx.fillRect(b.x - 4, b.y - 8, b.w + 8, 10)
   ctx.restore()
+  // porta (fechada = ocupado ou pronto; aberta e escura depois do uso)
+  ctx.fillStyle = s.used && s.using <= 0 ? '#241610' : '#3a2418'
+  ctx.fillRect(b.x + 9, b.y + 12, b.w - 18, b.h - 14)
+  // lua crescente na porta (banheiro clássico de faroeste... espacial)
+  ctx.fillStyle = '#ffd24d'
+  ctx.beginPath()
+  ctx.arc(b.x + b.w / 2, b.y + 22, 4, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = s.used && s.using <= 0 ? '#241610' : '#3a2418'
+  ctx.beginPath()
+  ctx.arc(b.x + b.w / 2 + 2.5, b.y + 21, 3.6, 0, Math.PI * 2)
+  ctx.fill()
+
+  // ocupado: balãozinho de esforço
+  if (s.using > 0) {
+    ctx.fillStyle = '#f4f4f4'
+    ctx.font = '12px "Press Start 2P", monospace'
+    const dots = '.'.repeat(1 + (Math.floor(s.time * 4) % 3))
+    ctx.fillText(dots, b.x + b.w / 2 - 8, b.y - 14)
+  }
+
+  // aviso quando falta papel
+  if (s.hintT > 0) {
+    ctx.save()
+    ctx.globalAlpha = Math.min(1, s.hintT / 0.3)
+    ctx.font = '9px "Press Start 2P", monospace'
+    const text = `FALTA PAPEL! ${papel.value}/${PAPER_TOTAL}`
+    const tw = ctx.measureText(text).width
+    const bx = Math.min(b.x + b.w / 2 - tw / 2 - 8, W - tw - 24)
+    const by = b.y - 40
+    ctx.fillStyle = '#f4f4f4'
+    ctx.fillRect(bx, by, tw + 16, 24)
+    ctx.fillStyle = '#12131a'
+    ctx.fillRect(bx, by, tw + 16, 2)
+    ctx.fillRect(bx, by + 22, tw + 16, 2)
+    ctx.fillRect(bx, by, 2, 24)
+    ctx.fillRect(bx + tw + 14, by, 2, 24)
+    ctx.fillText(text, bx + 8, by + 16)
+    ctx.restore()
+  }
+}
+
+function drawShipAndLadder(s) {
+  const bob = Math.sin(s.time * 2) * 4
+  const sy = SHIP.cy + bob
+
+  // escada de corda descendo da nave (só depois do banheiro)
+  if (s.used) {
+    ctx.strokeStyle = '#d8d8e2'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(LADDER.x - 8, sy + SHIP.h * 0.4)
+    ctx.lineTo(LADDER.x - 8, LADDER.bottom)
+    ctx.moveTo(LADDER.x + 8, sy + SHIP.h * 0.4)
+    ctx.lineTo(LADDER.x + 8, LADDER.bottom)
+    ctx.stroke()
+    for (let y = LADDER.top + 8; y < LADDER.bottom; y += 14) {
+      ctx.beginPath()
+      ctx.moveTo(LADDER.x - 8, y)
+      ctx.lineTo(LADDER.x + 8, y)
+      ctx.stroke()
+    }
+  }
+
+  // a nave do Gugu, sempre visível pairando (mesmo foguete do hangar)
+  drawShip(ctx, SHIP.cx - SHIP.w / 2, sy - SHIP.h / 2, SHIP.w, SHIP.h, props.loadout, s.time * 1000)
 }
 
 function drawNeymar(s) {
@@ -341,9 +504,10 @@ function drawNeymar(s) {
 }
 
 function drawPlayer(s) {
+  if (s.using > 0) return   // tá lá dentro, dá licença
   const p = s.player
   if (p.invuln > 0 && Math.floor(s.time * 10) % 2 === 0) return   // pisca
-  const sprite = p.onGround ? GUGU.idle : GUGU.thumbsUp
+  const sprite = p.onGround && !s.boarding ? GUGU.idle : GUGU.thumbsUp
   ctx.save()
   if (p.face < 0) {
     ctx.translate(p.x + p.w / 2, 0)
@@ -380,9 +544,11 @@ function drawEnemies(s) {
 function draw(s) {
   drawBackground(s)
   for (const b of SOLIDS) drawBrickBlock(b)
-  for (const c of s.coins) if (!c.taken) drawCoin(s, c)
+  drawBathroom(s)
+  for (const c of s.papers) if (!c.taken) drawPaper(s, c)
   drawNeymar(s)
   drawEnemies(s)
+  drawShipAndLadder(s)
   drawPlayer(s)
 }
 
@@ -399,16 +565,22 @@ function frame(ts) {
 }
 
 // ---- Fluxo -----------------------------------------------------------------
-function restart() {
+function nextStep() {
+  resume()
+  if (step.value < speech.length - 1) step.value++
+  else startGame()
+}
+
+function startGame() {
   game = newGame()
-  coins.value = 0
+  papel.value = 0
   lives.value = TUNING.lives
   sub.value = 'playing'
   last = 0
 }
 
 function finish() {
-  emit('earn', coins.value)
+  emit('earn', papel.value)
   emit('back')
 }
 
@@ -421,6 +593,7 @@ function jumpDown() {
 function onKey(e, down) {
   const k = e.key.toLowerCase()
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(k)) e.preventDefault()
+  if (down && k === 'enter' && sub.value === 'cutscene') { nextStep(); return }
   if (k === 'arrowleft' || k === 'a') keys.left = down
   if (k === 'arrowright' || k === 'd') keys.right = down
   if (k === ' ' || k === 'arrowup' || k === 'w') {
@@ -442,7 +615,11 @@ function press(dir, v) {
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
-  restart()
+  // Gugu apertado na cutscene
+  if (guguCanvas.value) {
+    const gctx = guguCanvas.value.getContext('2d')
+    drawSprite(gctx, 0, 0, GUGU.dazzled, 8)
+  }
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
   raf = requestAnimationFrame(frame)
@@ -460,20 +637,42 @@ onUnmounted(() => {
     <canvas ref="canvas" :width="W" :height="H"></canvas>
 
     <!-- HUD -->
-    <div class="mb-hud">
-      <span class="mb-lives"><span v-for="n in lives" :key="n">❤️</span></span>
-      <span class="mb-test">TELA DE TESTE</span>
-      <span class="mb-coins">🪙 {{ coins }}</span>
-    </div>
-    <p class="mb-help">← → andar · espaço/↑ pular (segure p/ pulo maior) · pise nos aliens!</p>
+    <template v-if="sub === 'playing'">
+      <div class="mb-hud">
+        <span class="mb-lives"><span v-for="n in lives" :key="n">❤️</span></span>
+        <span class="mb-coins">🧻 {{ papel }}/{{ PAPER_TOTAL }}</span>
+      </div>
+      <p class="mb-help">← → andar · espaço/↑ pular · colete o 🧻 e corra pro banheiro!</p>
+    </template>
 
-    <button class="mb-exit" @click="finish">← Sair</button>
+    <button v-if="sub !== 'cutscene'" class="mb-exit" @click="finish">← Sair</button>
+
+    <!-- Cutscene: Gugu apertado -->
+    <div v-if="sub === 'cutscene'" class="mb-cut" @pointerdown="resume">
+      <div class="mb-cut-sky"></div>
+      <canvas ref="guguCanvas" class="mb-gugu" width="128" height="136"></canvas>
+      <div class="mb-bubble">
+        <p>{{ speech[step] }}</p>
+        <button class="mb-btn" @click="nextStep">
+          {{ step < speech.length - 1 ? '▶ Continuar' : '🧻 Segura, Gugu!' }}
+        </button>
+      </div>
+      <button class="mb-skip" @click="startGame">Pular ⏭</button>
+    </div>
+
+    <!-- Missão cumprida -->
+    <div v-if="sub === 'won'" class="mb-over">
+      <h2>UFA! Agora sim! 🚀</h2>
+      <p>Missão número 2 cumprida. A Lua espera, Gugu!</p>
+      <p class="mb-loot">🧻 {{ papel }} rolos viraram 🪙 {{ papel }} moedas</p>
+      <button class="mb-btn" @click="finish">← Voltar à viagem</button>
+    </div>
 
     <!-- Game over -->
     <div v-if="sub === 'over'" class="mb-over">
-      <h2>Ih, Gugu... 💀</h2>
-      <p>Os aliens venceram dessa vez.</p>
-      <button class="mb-btn" @click="restart">↻ Tentar de novo</button>
+      <h2>Foi mal, pai... 💫</h2>
+      <p>Quase lá! Respira, Gugu, e tenta de novo.</p>
+      <button class="mb-btn" @click="startGame">↻ Tentar de novo</button>
       <button class="mb-btn mb-btn-alt" @click="finish">← Voltar ao jogo</button>
     </div>
 
@@ -519,15 +718,6 @@ onUnmounted(() => {
   text-shadow: 0 2px 0 #000;
   pointer-events: none;
 }
-.mb-test {
-  font-size: 0.55rem;
-  letter-spacing: 0.12em;
-  color: var(--accent, #ff4d4d);
-  border: 1px solid var(--accent, #ff4d4d);
-  border-radius: 4px;
-  padding: 3px 8px;
-  background: rgba(0, 0, 0, 0.35);
-}
 .mb-coins { color: #ffd24d; }
 
 .mb-help {
@@ -559,6 +749,77 @@ onUnmounted(() => {
 }
 .mb-exit:hover { background: rgba(155, 123, 255, 0.3); }
 
+/* Cutscene */
+.mb-cut {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.mb-cut-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(120% 80% at 20% 110%, rgba(120, 90, 220, 0.28), transparent 60%),
+    radial-gradient(90% 60% at 90% 0%, rgba(60, 140, 210, 0.22), transparent 55%),
+    linear-gradient(180deg, #05040c 0%, #150f28 55%, #0a0716 100%);
+}
+.mb-gugu {
+  width: 116px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 12px rgba(111, 207, 91, 0.35));
+  animation: mb-squirm 0.5s ease-in-out infinite;
+}
+@keyframes mb-squirm {
+  0%, 100% { transform: translateX(0) rotate(-2deg); }
+  50% { transform: translateX(3px) rotate(2deg); }
+}
+.mb-bubble {
+  position: relative;
+  max-width: 340px;
+  background: #fff;
+  color: #1a1330;
+  border: 3px solid #9b7bff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-family: 'VT323', monospace;
+}
+.mb-bubble::before {
+  content: '';
+  position: absolute;
+  top: -14px;
+  left: 40px;
+  border: 8px solid transparent;
+  border-bottom-color: #9b7bff;
+}
+.mb-bubble p {
+  margin: 0 0 12px;
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.mb-skip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 8px 14px;
+  font-family: 'VT323', monospace;
+  font-size: 1.1rem;
+  color: #fff;
+  background: rgba(20, 15, 32, 0.7);
+  border: 1px solid rgba(155, 123, 255, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.mb-skip:hover { background: rgba(155, 123, 255, 0.3); }
+
 .mb-over {
   position: absolute;
   inset: 0;
@@ -568,16 +829,21 @@ onUnmounted(() => {
   justify-content: center;
   gap: 14px;
   text-align: center;
-  background: rgba(6, 10, 20, 0.78);
+  background: rgba(6, 10, 20, 0.9);
   color: #fff;
   padding: 24px;
 }
+/* mesmo estilo do "Rumo à Lua" da tela inicial */
 .mb-over h2 {
   margin: 0;
-  font-size: 1.2rem;
-  text-shadow: 0 0 12px rgba(255, 77, 77, 0.65), 0 3px 0 #7a1f18;
+  font-size: 1.1rem;
+  line-height: 1.5;
+  letter-spacing: 2px;
+  color: var(--px-gold, #ffd24d);
+  text-shadow: 0 0 10px rgba(255, 207, 58, 0.6);
 }
-.mb-over p { margin: 0; font-family: 'VT323', monospace; font-size: 1.4rem; }
+.mb-over p { margin: 0; font-family: 'VT323', monospace; font-size: 1.6rem; line-height: 1.3; }
+.mb-loot { color: #ffd24d; }
 
 .mb-btn {
   padding: 12px 18px;
