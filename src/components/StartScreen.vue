@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { drawSprite, GUGU } from '../data/pixelSprites.js'
 import { playConfirm, playSelect, playSparkle, startTheme, stopTheme } from '../audio/sfx.js'
 
-const emit = defineEmits(['play'])
+const emit = defineEmits(['play', 'achievements'])
 
 const guguCanvas = ref(null)
 const GUGU_SCALE = 8
@@ -84,6 +84,7 @@ onUnmounted(() => {
       <p class="start-subtitle">Rumo à Lua</p>
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
+      <button class="start-ach" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
     </div>
   </div>
 </template>
@@ -205,6 +206,22 @@ onUnmounted(() => {
 }
 .start-btn:hover { filter: brightness(1.12); }
 .start-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #5a1510; }
+
+.start-ach {
+  margin-top: 10px;
+  padding: 10px 18px;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 0.7rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(155, 123, 255, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 0 14px rgba(155, 123, 255, 0.35);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.08s;
+}
+.start-ach:hover { filter: brightness(1.15); }
+.start-ach:active { transform: translateY(2px); }
 
 @media (max-width: 720px) {
   .start-title { font-size: 2rem; }

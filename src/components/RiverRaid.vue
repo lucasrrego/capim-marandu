@@ -5,14 +5,16 @@ import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
+import AchievementsScreen from './AchievementsScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
+import { unlock as unlockAchievement } from '../data/achievements.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'over' | 'won'
+const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
@@ -80,6 +82,8 @@ const PLASMA_LEN = 260               // comprimento do feixe (px)
 const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
 const BODY_KEY = 'capim-marandu:body'     // níveis de upgrade do corpo (persistem)
 const ENGINE_KEY = 'capim-marandu:engine' // níveis de upgrade do motor (persistem)
+const LOST_KEY = 'capim-marandu:lost'     // moedas perdidas somadas em todas as corridas
+const DEATHS_KEY = 'capim-marandu:deaths' // corridas perdidas (game over) somadas
 // Recompensa de moedas por tipo destruído. Para novos vilões, basta
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
@@ -104,8 +108,20 @@ const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
 
+let lostTotal = 0     // moedas perdidas acumuladas (persistido em LOST_KEY)
+let deathsTotal = 0   // corridas perdidas acumuladas (persistido em DEATHS_KEY)
+
 function loadBank() {
   bank.value = Number(localStorage.getItem(COINS_KEY)) || 0
+  lostTotal = Number(localStorage.getItem(LOST_KEY)) || 0
+  deathsTotal = Number(localStorage.getItem(DEATHS_KEY)) || 0
+}
+
+// perdeu a corrida (game over) → conta p/ conquista Teimoso
+function tallyLoss() {
+  deathsTotal += 1
+  localStorage.setItem(DEATHS_KEY, String(deathsTotal))
+  if (deathsTotal >= 10) unlockAchievement('ten-deaths')
 }
 
 // fecha a corrida: guarda `fraction` do que ganhou (1 = vitória, 0.25 = morte)
@@ -113,6 +129,13 @@ function settleRun(fraction) {
   runKept.value = Math.floor(runCoins.value * fraction)
   bank.value += runKept.value
   localStorage.setItem(COINS_KEY, String(bank.value))
+  // acumula moedas perdidas entre corridas → conquista Buraco Negro
+  const lost = runCoins.value - runKept.value
+  if (lost > 0) {
+    lostTotal += lost
+    localStorage.setItem(LOST_KEY, String(lostTotal))
+    if (lostTotal >= 1000) unlockAchievement('coin-loser')
+  }
 }
 
 // bônus avulso direto no banco (ex.: recompensa do pouso na Lua)
@@ -228,6 +251,7 @@ function newState() {
     warpSegment: 0,
     coinAcc: 0,
     runCoins: 0,
+    fuelKills: 0,
     charging: false,
     chargeStart: 0,
     plasmaCd: 0,
@@ -441,7 +465,7 @@ function update(dt, s) {
     s.respawn -= dt * 1000
     if (s.respawn <= 0) {
       s.respawn = 0
-      if (s.lives <= 0) { s.over = true; settleRun(shipStats.deathKeep); phase.value = 'over' }
+      if (s.lives <= 0) { s.over = true; settleRun(shipStats.deathKeep); tallyLoss(); phase.value = 'over' }
       else respawnPlayer(s)
     }
     return
@@ -536,6 +560,10 @@ function update(dt, s) {
       if (e.alive && hit(b, e)) {
         e.alive = false
         if (!b.pierce) b.y = -999       // feixe de plasma atravessa e limpa o caminho
+        if (e.type === 'fuel') {
+          s.fuelKills++                 // destruir 10 tanques numa corrida → conquista
+          if (s.fuelKills >= 10) unlockAchievement('fuel-destroyer')
+        }
         s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
         s.coinAcc += (COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD) * shipStats.coinMul
         const coinPayout = Math.floor(s.coinAcc)
@@ -913,6 +941,14 @@ function playIntro() {
   phase.value = 'intro'
 }
 
+// pousou na Lua = concluiu o jogo → conquistas
+// (o @reward do pouso já somou no banco antes deste handler)
+function onLanded() {
+  unlockAchievement('first-landing')
+  if (bank.value > 300) unlockAchievement('rich-landing')
+  if (score.value > 2000) unlockAchievement('high-score')
+}
+
 function startGame(loadout) {
   const config = { ...DEFAULT_LOADOUT, ...(loadout ?? hangarLoadout.value) }
   shipLoadout = config
@@ -970,7 +1006,7 @@ function onKey(e, down) {
     else if (phase.value === 'over') enterHangar()
     else if (phase.value === 'hangar') startGame()
   }
-  if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
+  if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements')) phase.value = 'start'
   if (k === 'escape' && down && (phase.value === 'playing' || phase.value === 'paused')) togglePause()
 }
 
@@ -1030,6 +1066,7 @@ onUnmounted(() => {
           :width="W"
           :height="H"
           @reward="addCoins"
+          @landed="onLanded"
           @fuel="fuelPct = $event"
           @speed="speedLabel = $event"
           @exit="phase = 'start'"
@@ -1040,8 +1077,19 @@ onUnmounted(() => {
 
         <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
 
-        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" />
+        <StartScreen
+          v-else-if="phase === 'start'"
+          class="rr-hangar"
+          @play="playIntro"
+          @achievements="phase = 'achievements'"
+        />
         <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
+
+        <AchievementsScreen
+          v-else-if="phase === 'achievements'"
+          class="rr-hangar"
+          @back="phase = 'start'"
+        />
 
         <HangarScreen
           v-else-if="phase === 'hangar'"

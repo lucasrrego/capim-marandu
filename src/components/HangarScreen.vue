@@ -8,6 +8,7 @@ import {
   buildShipStats,
   drawShip,
 } from '../data/shipParts.js'
+import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
 const coins = defineModel('coins', { type: Number, default: 0 })
@@ -23,6 +24,11 @@ let previewTime = 0
 const UPGRADE_TRACKS = { body: BODY_TRACKS, engine: ENGINE_TRACKS }
 const UPGRADE_STORE = { body: 'body', engine: 'engineUp' }
 const UPGRADE_DEFAULTS = { fuel: 0, shield: 0, save: 0, speed: 0 }
+
+// conquistas desbloqueadas ao abrir o hangar (só mudam durante o jogo)
+const unlocked = ref(loadUnlocked())
+const achName = (id) => ACHIEVEMENTS.find((a) => a.id === id)?.name ?? 'conquista'
+const partLocked = (part) => !!part.lockedBy && !isUnlocked(part.lockedBy, unlocked.value)
 
 const activeParts = computed(() => SHIP_PARTS[activeCategory.value] ?? [])
 const stats = computed(() => buildShipStats(loadout.value))
@@ -44,11 +50,13 @@ const statRows = computed(() => [
   { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
 
-function selectPart(id) {
-  loadout.value = { ...loadout.value, [activeCategory.value]: id }
+function selectPart(part) {
+  if (partLocked(part)) return
+  loadout.value = { ...loadout.value, [activeCategory.value]: part.id }
 }
 
 function buyUpgrade(track) {
+  if (partLocked(track)) return
   const store = upgradeStore.value
   const cur = { ...UPGRADE_DEFAULTS, ...(loadout.value[store] ?? {}) }
   const lvl = cur[track.key] ?? 0
@@ -138,19 +146,34 @@ onUnmounted(() => {
           <li v-for="part in activeParts" :key="part.id">
             <button
               class="part-card"
-              :class="{ selected: loadout[activeCategory] === part.id }"
-              @click="selectPart(part.id)"
+              :class="{ selected: loadout[activeCategory] === part.id, locked: partLocked(part) }"
+              :disabled="partLocked(part)"
+              @click="selectPart(part)"
             >
-              <span class="part-name">{{ part.name }}</span>
-              <span class="part-desc">{{ part.desc }}</span>
+              <span class="part-name">
+                {{ part.name }}
+                <span v-if="partLocked(part)" class="part-lock">🔒</span>
+              </span>
+              <span class="part-desc">
+                {{ part.desc }}
+                <template v-if="partLocked(part)"> · Requer: {{ achName(part.lockedBy) }}</template>
+              </span>
             </button>
           </li>
         </ul>
 
         <div v-if="upgradeTracks.length" class="hangar-upgrades">
-          <div v-for="track in upgradeTracks" :key="track.key" class="upgrade-card">
+          <div
+            v-for="track in upgradeTracks"
+            :key="track.key"
+            class="upgrade-card"
+            :class="{ locked: partLocked(track) }"
+          >
             <div class="upgrade-head">
-              <span class="part-name">{{ track.label }}</span>
+              <span class="part-name">
+                {{ track.label }}
+                <span v-if="partLocked(track)" class="part-lock">🔒</span>
+              </span>
               <span class="upgrade-pips">
                 <span
                   v-for="n in track.max"
@@ -160,13 +183,17 @@ onUnmounted(() => {
                 ></span>
               </span>
             </div>
-            <span class="part-desc">{{ track.desc }}</span>
+            <span class="part-desc">
+              {{ track.desc }}
+              <template v-if="partLocked(track)"> · Requer: {{ achName(track.lockedBy) }}</template>
+            </span>
             <button
               class="upgrade-buy"
-              :disabled="levels[track.key] >= track.max || coins < track.cost(levels[track.key])"
+              :disabled="partLocked(track) || levels[track.key] >= track.max || coins < track.cost(levels[track.key])"
               @click="buyUpgrade(track)"
             >
-              <template v-if="levels[track.key] >= track.max">MÁX</template>
+              <template v-if="partLocked(track)">🔒 Bloqueado</template>
+              <template v-else-if="levels[track.key] >= track.max">MÁX</template>
               <template v-else>Melhorar · 🪙 {{ track.cost(levels[track.key]) }}</template>
             </button>
           </div>
@@ -423,6 +450,23 @@ onUnmounted(() => {
 .part-card.selected {
   border-color: var(--accent, #aa3bff);
   background: rgba(170, 59, 255, 0.12);
+}
+
+.part-card.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.part-card.locked:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.part-lock {
+  font-size: 0.75rem;
+}
+
+.upgrade-card.locked {
+  opacity: 0.6;
+  border-style: dashed;
 }
 
 .part-name {
