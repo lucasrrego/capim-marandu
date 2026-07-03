@@ -8,9 +8,9 @@ export const PART_CATEGORIES = [
 
 export const SHIP_PARTS = {
   wing: [
-    { id: 'std', name: 'Padrão', desc: 'Equilíbrio entre controle e velocidade', wingW: 1, wingColor: '#d8d8d8', agility: 1 },
-    { id: 'wide', name: 'Larga', desc: 'Mais estável, menos ágil', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82 },
-    { id: 'delta', name: 'Delta', desc: 'Cortes rápidos no rio', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.18 },
+    { id: 'std', name: 'Padrão', desc: 'Equilíbrio entre manobra e resistência', wingW: 1, wingColor: '#d8d8d8', agility: 1, lifeBonus: 0 },
+    { id: 'wide', name: 'Larga', desc: 'Manobra lenta, +1 vida', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82, lifeBonus: 1 },
+    { id: 'delta', name: 'Delta', desc: 'Manobra rápida no rio', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.18, lifeBonus: 0 },
   ],
   body: [
     { id: 'std', name: 'Leve', desc: 'Fuselagem compacta', color: '#f4f4f4', armor: 1, fuelUse: 1 },
@@ -18,14 +18,14 @@ export const SHIP_PARTS = {
     { id: 'stream', name: 'Aerodinâmico', desc: 'Menos consumo de combustível', color: '#e8eef8', armor: 0.85, fuelUse: 0.82 },
   ],
   nose: [
-    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#f4f4f4' },
-    { id: 'sharp', name: 'Agulha', desc: 'Penetração e precisão', shape: 'needle', length: 6, tipColor: '#ffe14d' },
-    { id: 'blunt', name: 'Rombo', desc: 'Mais área de impacto frontal', shape: 'blunt', length: -2, tipColor: '#d0d0d0' },
+    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#f4f4f4', damageMul: 1, hitboxW: 1 },
+    { id: 'sharp', name: 'Agulha', desc: '+15% dano nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', damageMul: 1.15, hitboxW: 1 },
+    { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
   ],
   engine: [
-    { id: 'std', name: 'Turbo', desc: 'Velocidade média confiável', flameColor: '#ff8a1a', power: 1, maxSpeed: 1 },
-    { id: 'after', name: 'Pós-combustão', desc: 'Velocidade máxima alta', flameColor: '#ff4d4d', power: 1.5, maxSpeed: 1.25 },
-    { id: 'eco', name: 'Econômico', desc: 'Menos fumaça, mais autonomia', flameColor: '#37e0a0', power: 0.7, maxSpeed: 0.9 },
+    { id: 'std', name: 'Turbo', desc: 'Velocidade média confiável', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelEfficiency: 1 },
+    { id: 'after', name: 'Pós-combustão', desc: 'Velocidade máxima alta', flameColor: '#ff4d4d', power: 1.5, maxSpeed: 1.25, fuelEfficiency: 1 },
+    { id: 'eco', name: 'Econômico', desc: 'Menos consumo e fumaça', flameColor: '#37e0a0', power: 0.7, maxSpeed: 0.9, fuelEfficiency: 0.85 },
   ],
   weapon: [
     { id: 'cannon', name: 'Canhão', desc: 'Tiro único, dano padrão', bulletW: 4, bulletH: 12, bulletColor: '#ffe14d', fireCd: 200, damage: 1 },
@@ -56,18 +56,28 @@ export function resolveLoadout(loadout = DEFAULT_LOADOUT) {
   }
 }
 
+const BASE_LIVES = 3
+const PLAYER_W = 26
+const PLAYER_H = 32
+
 export function buildShipStats(loadout) {
   const p = resolveLoadout(loadout)
+  let startLives = BASE_LIVES + (p.wing.lifeBonus ?? 0)
+  if (p.body.armor >= 1.3) startLives += 1
   return {
     agility: p.wing.agility,
+    lifeBonus: p.wing.lifeBonus ?? 0,
     armor: p.body.armor,
-    fuelUse: p.body.fuelUse,
+    fuelUse: p.body.fuelUse * (p.engine.fuelEfficiency ?? 1),
     maxSpeedMul: p.engine.maxSpeed,
     fireCd: p.weapon.fireCd,
-    damage: p.weapon.damage,
+    damage: p.weapon.damage * (p.nose.damageMul ?? 1),
     bulletW: p.weapon.bulletW,
     bulletH: p.weapon.bulletH,
     bulletColor: p.weapon.bulletColor,
+    hitboxW: Math.round(PLAYER_W * (p.nose.hitboxW ?? 1)),
+    hitboxH: PLAYER_H,
+    startLives,
   }
 }
 

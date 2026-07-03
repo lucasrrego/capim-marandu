@@ -199,7 +199,7 @@ function respawnPlayer(s) {
   p.x = (band.left + band.right) / 2 - p.w / 2   // nasce no meio do caminho permitido
   s.fuel = FUEL_MAX
   fuelPct.value = 100
-  s.invuln = RESPAWN_INVULN
+  s.invuln = RESPAWN_INVULN * shipStats.armor
   s.speed = BASE_SPEED
   s.enemies = s.enemies.filter((e) => e.y < p.y - 160)
 }
@@ -565,10 +565,12 @@ function startGame(loadout) {
   shipLoadout = config
   shipStats = buildShipStats(shipLoadout)
   state = newState()
-  const startLives = shipStats.armor >= 1.3 ? 4 : 3
-  state.lives = startLives
+  state.player.w = shipStats.hitboxW
+  state.player.h = shipStats.hitboxH
+  state.player.x = W / 2 - state.player.w / 2
+  state.lives = shipStats.startLives
   score.value = 0
-  lives.value = startLives
+  lives.value = shipStats.startLives
   fuelPct.value = 100
   phase.value = 'playing'
   last = 0

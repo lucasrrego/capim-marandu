@@ -20,17 +20,13 @@ const activeParts = computed(() => SHIP_PARTS[activeCategory.value])
 const stats = computed(() => buildShipStats(loadout.value))
 
 const statRows = computed(() => [
+  { label: 'Vidas', value: String(stats.value.startLives) },
   { label: 'Agilidade', value: stats.value.agility.toFixed(2) + 'x' },
   { label: 'Blindagem', value: stats.value.armor.toFixed(2) + 'x' },
   { label: 'Consumo', value: stats.value.fuelUse.toFixed(2) + 'x' },
   { label: 'Vel. máx', value: stats.value.maxSpeedMul.toFixed(2) + 'x' },
-  { label: 'Arma', value: getPartName('weapon') },
+  { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
-
-function getPartName(category) {
-  const id = loadout.value[category]
-  return SHIP_PARTS[category].find((p) => p.id === id)?.name ?? '—'
-}
 
 function selectPart(id) {
   loadout.value = { ...loadout.value, [activeCategory.value]: id }
