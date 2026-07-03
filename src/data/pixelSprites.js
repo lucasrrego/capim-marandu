@@ -30,6 +30,7 @@ export const PALETTE = {
   j: '#3a7bff',       // azul do Japão
   J: '#1f4fd0',       // azul do Japão (sombra)
   p: '#8e44ad',       // vestido roxo da Vó Baiana
+  L: '#e6c15f',       // cabelo loiro
 }
 
 /** Desenha um sprite (array de strings) no contexto 2D. */
@@ -229,4 +230,23 @@ export const VO_BAIANA = [
   '.pppwwwwwwwwppp.',
   '.pppppppppppppp.',
   '.pp.pppppppp.pp.',
+]
+
+// Repórter loira gritando (busto): cabelo loiro (L), pele (s), olhos (k),
+// boca aberta (r/k), camisa do Brasil (y) com gola azul (j). Grade 13.
+export const BLONDE_WOMAN = [
+  '....LLLLL....',
+  '..LLLLLLLLL..',
+  '.LLLLLLLLLLL.',
+  '.LLsssssssLL.',
+  '.LLsssssssLL.',
+  '.LLsksssksLL.',
+  '.LLsssssssLL.',
+  '.LLssrrrssLL.',
+  '.LLssrkrssLL.',
+  '.LLsssssssLL.',
+  '.LLLsssssLLL.',
+  '.yyyyyyyyyyy.',
+  '.yyjjjjjjjyy.',
+  '.yyyyyyyyyyy.',
 ]

@@ -366,6 +366,56 @@ export function playAbduct() {
   playBlip({ notes: [72, 76, 79, 84], type: 'square', gain: 0.3, step: 0.05, dur: 0.14 })
 }
 
+// uma "sílaba" de voz alienígena: sawtooth + quinta metálica por um formante,
+// com glide de tom (bend em semitons) e envelope curto.
+function alienSyllable(c, t, midi, dur, bend = 0, gain = 0.24) {
+  const o = c.createOscillator()
+  o.type = 'sawtooth'
+  o.frequency.setValueAtTime(midiToFreq(midi), t)
+  o.frequency.exponentialRampToValueAtTime(midiToFreq(midi + bend), t + dur)
+  const o2 = c.createOscillator()   // quinta acima = timbre metálico/robótico
+  o2.type = 'square'
+  o2.frequency.setValueAtTime(midiToFreq(midi) * 1.5, t)
+  o2.frequency.exponentialRampToValueAtTime(midiToFreq(midi + bend) * 1.5, t + dur)
+  const bp = c.createBiquadFilter()  // formante (dá cara de "vogal")
+  bp.type = 'bandpass'
+  bp.frequency.value = 1650
+  bp.Q.value = 4
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.02)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  o.connect(bp)
+  o2.connect(bp)
+  bp.connect(g)
+  g.connect(c.destination)
+  o.start(t); o.stop(t + dur + 0.03)
+  o2.start(t); o2.stop(t + dur + 0.03)
+}
+
+/**
+ * Abduziu o craque (Neymar) — voz alienígena imitando "levanta menino ney",
+ * com a última sílaba esticada e subindo (o sotaque). 100% sintetizado.
+ */
+export function playAbductStar() {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const t = c.currentTime + 0.001
+  // [midi, início(s), duração(s), bend(semitons)] — cadência da frase
+  const syllables = [
+    [76, 0.00, 0.12,  2],   // le
+    [79, 0.15, 0.12, -2],   // van (tônica)
+    [74, 0.30, 0.14,  0],   // ta
+    [78, 0.52, 0.12,  2],   // me
+    [81, 0.67, 0.12, -1],   // ni (tônica)
+    [76, 0.82, 0.14,  0],   // no
+    [72, 1.02, 0.40,  8],   // ney — esticado e subindo (sotaque)
+  ]
+  const rate = 0.78   // < 1 = mais rápido
+  for (const [m, at, d, b] of syllables) alienSyllable(c, t + at * rate, m + 12, d * rate, b)   // +12 = mais fino
+}
+
 /** Craque se jogou no chão pra escapar (whoosh descendo). */
 export function playDodge() {
   playBlip({ notes: [72, 60], type: 'triangle', gain: 0.26, step: 0.05, dur: 0.12 })
