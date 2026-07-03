@@ -212,9 +212,16 @@ watch(bank, (v) => localStorage.setItem(slotKey('coins'), String(v)))
 watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(slotKey('body'), JSON.stringify(b)), { deep: true })
 watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(slotKey('engine'), JSON.stringify(e)), { deep: true })
 
+// Nos primeiros INTRO_MS o canal fica totalmente aberto (margens só nas bordas
+// da tela), dando folga perto do spawn antes das paredes começarem a fechar.
+const INTRO_MS = 10000
+const OPEN_LEFT = MARGIN
+const OPEN_RIGHT = W - MARGIN
+
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
-  return { left: W * 0.28, right: W * 0.72, tL: W * 0.28, tR: W * 0.72, steps: 0 }
+  // começa aberto pra transição suave quando as paredes voltam a fechar
+  return { left: OPEN_LEFT, right: OPEN_RIGHT, tL: OPEN_LEFT, tR: OPEN_RIGHT, steps: 0 }
 }
 function stepGen(g) {
   if (g.steps <= 0) {
@@ -233,9 +240,9 @@ function stepGen(g) {
 function newState() {
   const gen = makeGen()
   const rows = []
+  // spawn começa com o canal aberto (paredes só nas bordas)
   for (let i = 0; i < N_ROWS; i++) {
-    const b = stepGen(gen)
-    rows.push({ y: H - i * ROW_H, left: b.left, right: b.right })
+    rows.push({ y: H - i * ROW_H, left: OPEN_LEFT, right: OPEN_RIGHT })
   }
   const stars = []
   for (let i = 0; i < 90; i++) {
@@ -576,7 +583,8 @@ function update(dt, s) {
   for (const r of s.rows) {
     if (r.y >= H) {
       minY -= ROW_H
-      const b = stepGen(s.gen)
+      // nos primeiros 10s mantém aberto; depois as paredes voltam a fechar
+      const b = s.time < INTRO_MS ? { left: OPEN_LEFT, right: OPEN_RIGHT } : stepGen(s.gen)
       r.y = minY
       r.left = b.left
       r.right = b.right
