@@ -250,14 +250,17 @@ function stepGen(g) {
   return { left: g.left, right: g.right }
 }
 
-// sorteia warps distintos (1..5) por corrida: abdução, defesa orbital e Gugu Bros
-function pickMinigameSegments() {
-  const segs = [1, 2, 3, 4, 5]
-  for (let i = segs.length - 1; i > 0; i--) {
+// Cada warp (1..5) recebe um minigame de verdade — nunca a cena em branco.
+// Ordem embaralhada por corrida; os tipos repetem quando todos já foram jogados.
+const MINIGAME_TYPES = ['abduction', 'orbital', 'mario']
+function pickMinigameOrder() {
+  const types = [...MINIGAME_TYPES]
+  for (let i = types.length - 1; i > 0; i--) {
     const j = Math.floor(rand(0, i + 1))
-    ;[segs[i], segs[j]] = [segs[j], segs[i]]
+    ;[types[i], types[j]] = [types[j], types[i]]
   }
-  return { abductionSegment: segs[0], orbitalSegment: segs[1], marioSegment: segs[2] }
+  // warp i → types[i % n], cobrindo os 5 warps e repetindo os tipos
+  return Array.from({ length: WARP_SEGMENTS }, (_, i) => types[i % types.length])
 }
 
 function newState() {
@@ -329,7 +332,7 @@ function newState() {
     nextWarpAt: SHORT_GOAL / (WARP_SEGMENTS + 1),
     warpSegment: 0,
     bossDone: false,                            // chefe na metade do percurso (uma vez)
-    ...pickMinigameSegments(),   // quais warps (1..5) viram cada minigame
+    minigameOrder: pickMinigameOrder(),   // game de cada warp (1..5), sem branco
     coinAcc: 0,
     runCoins: 0,
     fuelKills: 0,
@@ -1161,10 +1164,8 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  const game = warp.segment === state.abductionSegment ? 'abduction'
-    : warp.segment === state.orbitalSegment ? 'orbital'
-    : warp.segment === state.marioSegment ? 'mario'
-    : 'placeholder'
+  // sempre um minigame de verdade (ordem definida em newState), nunca em branco
+  const game = state.minigameOrder[(warp.segment - 1) % state.minigameOrder.length] ?? 'abduction'
   minigameFromStart = false
   activeMinigame.value = { segment: warp.segment, color: warp.color, game }
   phase.value = 'minigame'
