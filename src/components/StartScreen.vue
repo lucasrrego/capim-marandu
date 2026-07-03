@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { drawSprite, GUGU } from '../data/pixelSprites.js'
 import { playConfirm, playSelect, playSparkle, startTheme, stopTheme } from '../audio/sfx.js'
 
-const emit = defineEmits(['play', 'minigame'])
+const emit = defineEmits(['play', 'achievements', 'minigame'])
 
 const guguCanvas = ref(null)
 const GUGU_SCALE = 8
@@ -87,10 +87,14 @@ onUnmounted(() => {
       <canvas ref="guguCanvas" class="start-gugu" width="128" height="136"></canvas>
 
       <h1 class="start-title">GUGU</h1>
+      <p class="start-acronym">
+        <b>G</b>enoma <b>U</b>ltra <b>G</b>aláctico <b>Ú</b>nico
+      </p>
       <p class="start-subtitle">Rumo à Lua</p>
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
       <button class="start-btn start-btn-mini" @click="openMinigame" @pointerenter="playSelect">🛸 Sonho da Vó Baiana</button>
+      <button class="start-ach" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
     </div>
   </div>
 </template>
@@ -188,6 +192,18 @@ onUnmounted(() => {
     0 3px 0 #4a2f8f;
 }
 
+.start-acronym {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  color: #cfc7ee;
+  opacity: 0.85;
+}
+.start-acronym b {
+  color: var(--px-purple, #9b7bff);
+  text-shadow: 0 0 8px rgba(155, 123, 255, 0.6);
+}
+
 .start-subtitle {
   margin: 0;
   font-family: var(--pixel, 'Press Start 2P', monospace);
@@ -221,6 +237,22 @@ onUnmounted(() => {
   box-shadow: 0 4px 0 #35216a, 0 0 18px rgba(155, 123, 255, 0.5);
 }
 .start-btn-mini:active { box-shadow: 0 1px 0 #35216a; }
+
+.start-ach {
+  margin-top: 10px;
+  padding: 10px 18px;
+  font-family: var(--pixel, 'Press Start 2P', monospace);
+  font-size: 0.7rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(155, 123, 255, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 0 14px rgba(155, 123, 255, 0.35);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.08s;
+}
+.start-ach:hover { filter: brightness(1.15); }
+.start-ach:active { transform: translateY(2px); }
 
 @media (max-width: 720px) {
   .start-title { font-size: 2rem; }
