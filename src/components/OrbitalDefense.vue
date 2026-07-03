@@ -24,7 +24,7 @@ const TUNING = {
   lives: 3,
   coins: { perScore: 50, lossKeep: 0.5 },   // score→moedas; derrota guarda metade
   wave1: {
-    count: 10,
+    count: 5,
     spawnEvery: [1.5, 0.85],   // intervalo entre asteroides: início → fim da wave
     approachS: [6.5, 4.2],     // tempo até o impacto: início → fim da wave
     radius: [20, 30],          // raio base sorteado
