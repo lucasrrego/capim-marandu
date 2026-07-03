@@ -32,6 +32,7 @@ const lives = ref(3)
 const shield = ref(0)
 const bossHp = ref(0)        // HP do jogador durante a luta contra o chefe (barra lateral)
 const transition = ref(false)  // máscara de transição ativa (entra/sai da arena do chefe)
+const transitionJingle = ref('battle')  // 'battle' toca o sting; 'none' silêncio
 let pendingPhase = null        // fase a assumir quando a máscara cobrir a tela
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
@@ -1147,8 +1148,9 @@ function exitMinigame() {
 }
 
 // ---- Transição estilo Pokémon (entra/sai da arena do chefe) ----
-function playTransition(next) {
+function playTransition(next, jingle = 'battle') {
   pendingPhase = next
+  transitionJingle.value = jingle
   transition.value = true
 }
 // máscara cobriu a tela → troca a cena por baixo dela
@@ -1175,7 +1177,7 @@ function onBossCleared(coins) {
     runCoins.value = state.runCoins
   }
   state.invuln = Math.max(state.invuln, WARP_INVULN)
-  playTransition('playing')
+  playTransition('playing', 'none')
 }
 
 // perdeu pro chefe: encerra a corrida (game over)
@@ -1184,7 +1186,7 @@ function onBossFailed() {
   settleRun(shipStats.deathKeep)
   tallyLoss()
   lives.value = 0
-  playTransition('over')
+  playTransition('over', 'none')
 }
 
 // Volta do minigame: pra tela inicial se veio de lá, senão retoma o percurso.
@@ -1392,6 +1394,7 @@ onUnmounted(() => {
 
         <BattleTransition
           v-if="transition"
+          :jingle="transitionJingle"
           @covered="onTransitionCovered"
           @done="onTransitionDone"
         />

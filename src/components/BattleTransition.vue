@@ -3,7 +3,11 @@
 // até cobrir tudo (emite 'covered' — hora de trocar a cena por baixo), seguram
 // um instante e recuam revelando a nova cena (emite 'done').
 import { ref, onMounted, onUnmounted } from 'vue'
+import { playBattleStart } from '../audio/sfx.js'
 
+const props = defineProps({
+  jingle: { type: String, default: 'battle' },   // 'battle' toca o sting; 'none' fica em silêncio
+})
 const emit = defineEmits(['covered', 'done'])
 
 const STRIPES = 9
@@ -16,6 +20,7 @@ const flash = ref(false)
 let timers = []
 
 onMounted(() => {
+  if (props.jingle === 'battle') playBattleStart()
   // pisca rápido e começa a cobrir
   flash.value = true
   timers.push(setTimeout(() => (flash.value = false), 120))
