@@ -2,6 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
+import MinigameScreen from './MinigameScreen.vue'
+import IntroScreen from './IntroScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -9,11 +11,13 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'over' | 'moon'
+const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'over' | 'won'
+const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
+const progressPct = ref(0)             // % da distância total percorrida
 const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
 const coins = ref(0)
 
@@ -30,6 +34,7 @@ const BASE_SPEED = 120               // px/s de rolagem
 const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
+const GOAL_DISTANCE = 24000           // px de rolagem até a vitória
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
@@ -42,6 +47,13 @@ const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
 const DEFAULT_COIN_REWARD = 1
+
+// ---- Warps de mini game (1 a cada 1/5 do percurso) ----
+const RUN_LENGTH = 1500              // reduzido para teste (warp a cada ~300 px)
+const WARP_INTERVAL = RUN_LENGTH / 5
+const WARP_COLORS = ['#ff4d4d', '#ffd24d', '#37e0a0', '#9b7bff', '#ff8a1a']
+const WARP_W = 32
+const WARP_H = 40
 
 const keys = {}
 
@@ -132,7 +144,29 @@ function newState() {
     particles: [],
     over: false,
     time: 0,
+    warps: [],
+    nextWarpAt: WARP_INTERVAL,
+    warpSegment: 0,
   }
+}
+
+function spawnWarp(s) {
+  if (s.warpSegment >= 5) return
+  const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
+  const segment = s.warpSegment + 1
+  const color = WARP_COLORS[s.warpSegment]
+  const side = s.warpSegment % 2 === 0 ? 'left' : 'right'
+  const x = side === 'left'
+    ? top.left - WARP_W * 0.55
+    : top.right - WARP_W * 0.45
+  s.warps.push({
+    side, color, segment,
+    x, y: -WARP_H - 4,
+    w: WARP_W, h: WARP_H,
+    alive: true,
+  })
+  s.warpSegment++
+  s.nextWarpAt += WARP_INTERVAL
 }
 
 // margens interpoladas na altura y
@@ -256,6 +290,17 @@ function update(dt, s) {
   const move = s.speed * dt
   s.distance += move
 
+  while (s.distance >= s.nextWarpAt && s.warpSegment < 5) spawnWarp(s)
+
+  // vitória: chegou ao fim do percurso
+  if (s.distance >= GOAL_DISTANCE) {
+    s.distance = GOAL_DISTANCE
+    progressPct.value = 100
+    s.over = true
+    phase.value = 'won'
+    return
+  }
+
   // rolagem do terreno + reciclagem
   let minY = Infinity
   for (const r of s.rows) { r.y += move; if (r.y < minY) minY = r.y }
@@ -313,6 +358,10 @@ function update(dt, s) {
   }
   s.enemies = s.enemies.filter((e) => e.alive && e.y < H + 40)
 
+  // warps laterais
+  for (const w of s.warps) w.y += move
+  s.warps = s.warps.filter((w) => w.alive && w.y < H + 40)
+
   // tiros x inimigos
   for (const b of s.bullets) {
     for (const e of s.enemies) {
@@ -357,6 +406,16 @@ function update(dt, s) {
     }
   }
 
+  // colisão com warp lateral → mini game
+  for (const w of s.warps) {
+    if (!w.alive) continue
+    if (hit(p, w)) {
+      w.alive = false
+      enterMinigame(w)
+      return
+    }
+  }
+
   // acabou o combustível
   if (s.fuel <= 0) { s.fuel = 0; killPlayer(s) }
 
@@ -367,6 +426,7 @@ function update(dt, s) {
   score.value = Math.floor(s.score)
   fuelPct.value = Math.max(0, Math.round((s.fuel / FUEL_MAX) * 100))
   speedLabel.value = (s.speed / BASE_SPEED).toFixed(1) + 'x'
+  progressPct.value = Math.min(100, (s.distance / GOAL_DISTANCE) * 100)
 }
 
 // ---- Render ----
@@ -441,6 +501,38 @@ function draw(s) {
     ctx.fill()
   }
   ctx.globalAlpha = 1
+
+  // warps laterais (setas coloridas)
+  for (const w of s.warps) {
+    if (!w.alive) continue
+    const pulse = 0.7 + 0.3 * Math.sin(s.time / 200 + w.segment)
+    ctx.save()
+    ctx.shadowColor = w.color
+    ctx.shadowBlur = 10 + 8 * pulse
+    ctx.fillStyle = w.color
+    ctx.globalAlpha = 0.85 + 0.15 * pulse
+    ctx.beginPath()
+    if (w.side === 'left') {
+      ctx.moveTo(w.x, w.y + w.h / 2)
+      ctx.lineTo(w.x + w.w, w.y + 4)
+      ctx.lineTo(w.x + w.w, w.y + w.h - 4)
+    } else {
+      ctx.moveTo(w.x + w.w, w.y + w.h / 2)
+      ctx.lineTo(w.x, w.y + 4)
+      ctx.lineTo(w.x, w.y + w.h - 4)
+    }
+    ctx.closePath()
+    ctx.fill()
+    // anel do portal na lateral
+    ctx.globalAlpha = 0.5 + 0.3 * pulse
+    ctx.strokeStyle = w.color
+    ctx.lineWidth = 2
+    const cx = w.side === 'left' ? w.x + w.w * 0.35 : w.x + w.w * 0.65
+    ctx.beginPath()
+    ctx.arc(cx, w.y + w.h / 2, w.h * 0.38, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
 
   // inimigos
   for (const e of s.enemies) {
@@ -588,6 +680,10 @@ function enterMoon() {
   phase.value = 'moon'
 }
 
+function playIntro() {
+  phase.value = 'intro'
+}
+
 function startGame(loadout) {
   const config = { ...DEFAULT_LOADOUT, ...(loadout ?? hangarLoadout.value) }
   shipLoadout = config
@@ -600,6 +696,7 @@ function startGame(loadout) {
   score.value = 0
   lives.value = shipStats.startLives
   fuelPct.value = 100
+  progressPct.value = 0
   phase.value = 'playing'
   last = 0
 }
@@ -607,6 +704,16 @@ function startGame(loadout) {
 function togglePause() {
   if (phase.value === 'playing') phase.value = 'paused'
   else if (phase.value === 'paused') { phase.value = 'playing'; last = 0 }
+}
+
+function enterMinigame(warp) {
+  activeMinigame.value = { segment: warp.segment, color: warp.color }
+  phase.value = 'minigame'
+}
+
+function exitMinigame() {
+  phase.value = 'playing'
+  last = 0
 }
 
 function onKey(e, down) {
@@ -619,7 +726,8 @@ function onKey(e, down) {
   if (k === ' ' && down && phase.value === 'playing') fire(state)
   if (k === 'p' && down) togglePause()
   if (k === 'enter' && down) {
-    if (phase.value === 'start' || phase.value === 'over') enterHangar()
+    if (phase.value === 'start') playIntro()
+    else if (phase.value === 'over') enterHangar()
     else if (phase.value === 'hangar') startGame()
   }
   if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
@@ -679,11 +787,13 @@ onUnmounted(() => {
         <template v-else>
         <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-        <div v-if="phase === 'start'" class="rr-overlay">
+        <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
+
+        <div v-else-if="phase === 'start'" class="rr-overlay">
           <h2>River Raid</h2>
           <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
           <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-          <button @click="enterHangar">▶ Jogar</button>
+          <button @click="playIntro">▶ Jogar</button>
           <button class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
         </div>
 
@@ -695,6 +805,14 @@ onUnmounted(() => {
           @back="phase = 'start'"
         />
 
+        <MinigameScreen
+          v-else-if="phase === 'minigame'"
+          class="rr-hangar"
+          :segment="activeMinigame.segment"
+          :color="activeMinigame.color"
+          @back="exitMinigame"
+        />
+
         <div v-else-if="phase === 'paused'" class="rr-overlay">
           <h2>Pausado</h2>
           <button @click="togglePause">▶ Continuar</button>
@@ -704,6 +822,18 @@ onUnmounted(() => {
           <h2>Fim de jogo</h2>
           <p>Pontuação: <b>{{ score }}</b></p>
           <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
+
+        <div v-else-if="phase === 'won'" class="rr-overlay">
+          <h2>🏆 Você venceu!</h2>
+          <p>Chegou ao fim do percurso.</p>
+          <p>Pontuação: <b>{{ score }}</b></p>
+          <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
+
+        <div class="rr-progress" :title="Math.round(progressPct) + '%'">
+          <div class="rr-progress-fill" :style="{ height: progressPct + '%' }"></div>
+          <span class="rr-progress-flag">🏁</span>
         </div>
         </template>
       </div>
@@ -888,6 +1018,36 @@ onUnmounted(() => {
 .rr-hangar {
   position: absolute;
   inset: 0;
+}
+.rr-progress {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  right: 8px;
+  width: 10px;
+  border-radius: 6px;
+  background: rgba(23, 18, 31, 0.7);
+  border: 1px solid rgba(155, 123, 255, 0.35);
+  overflow: hidden;
+  z-index: 2;
+  pointer-events: none;
+}
+.rr-progress-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(0deg, #37e0a0, #12c2c2, #9b7bff);
+  box-shadow: 0 0 8px rgba(155, 123, 255, 0.6);
+  transition: height 0.15s linear;
+}
+.rr-progress-flag {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1;
 }
 .rr-overlay {
   position: absolute;
