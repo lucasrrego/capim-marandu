@@ -114,9 +114,9 @@ function drawPreview(ts) {
   raf = requestAnimationFrame(drawPreview)
 }
 
-function launch() {
+function launch(short = false) {
   playConfirm()
-  emit('launch', { ...loadout.value })
+  emit('launch', { loadout: { ...loadout.value }, short })
 }
 
 function goBack() {
@@ -235,8 +235,9 @@ onUnmounted(() => {
 
     <div class="hangar-actions">
       <button class="hangar-btn secondary" @click="goBack">← Voltar</button>
-      <button class="hangar-btn primary" @click="launch">🚀 Lançar</button>
+      <button class="hangar-btn primary" @click="launch(false)">🚀 Lançar</button>
     </div>
+    <button class="hangar-devrun" @click="launch(true)">⚡ Corrida curta (teste)</button>
   </div>
 </template>
 
@@ -609,4 +610,21 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .hangar-btn:hover { filter: brightness(1.15); }
+
+.hangar-devrun {
+  position: relative;
+  z-index: 1;
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #9aa;
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.hangar-devrun:hover { filter: brightness(1.3); }
 </style>
