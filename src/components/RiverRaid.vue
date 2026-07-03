@@ -9,7 +9,7 @@ import StartScreen from './StartScreen.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
 import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
-import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady } from '../audio/sfx.js'
+import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady, startGameMusic, stopMusic } from '../audio/sfx.js'
 import { drawSprite, SATELLITE, SPACE_JUNK } from '../data/pixelSprites.js'
 import { unlock as unlockAchievement } from '../data/achievements.js'
 import { slotKey, setSlot } from '../data/saves.js'
@@ -996,6 +996,7 @@ function frame(ts) {
   if (dt > 0.05) dt = 0.05
 
   if (phase.value === 'playing') {
+    startGameMusic()   // trilha de aventura (idempotente; religa ao entrar no jogo)
     // canvas remonta ao voltar de fases que trocam a view (ex.: moon) → reobtém o ctx
     if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
     update(dt, state)
@@ -1003,6 +1004,7 @@ function frame(ts) {
   } else {
     if (phase.value !== 'moon') setThrust(false)   // na Lua quem controla a propulsão é o MoonLanding
     stopPlasmaCharge()   // pausado / hangar / moon / fim → sem zumbido de carga
+    if (phase.value === 'over' || phase.value === 'won') stopMusic()   // fim de jogo → silêncio
   }
   raf = requestAnimationFrame(frame)
 }
@@ -1143,6 +1145,7 @@ function onKey(e, down) {
   }
   if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements' || phase.value === 'saves')) phase.value = 'start'
   if (k === 'escape' && down && (phase.value === 'playing' || phase.value === 'paused')) togglePause()
+  if (k === 'n' && down) addCoins(1000)   // atalho secreto: +1000 moedas
 }
 
 const kd = (e) => onKey(e, true)
@@ -1190,6 +1193,7 @@ onUnmounted(() => {
   if (fireHold) clearInterval(fireHold)
   setThrust(false)
   stopPlasmaCharge()
+  stopMusic()
 })
 </script>
 
