@@ -28,15 +28,18 @@ Entrar custa tempo/risco, mas dá recompensa → decisão risco/recompensa const
 
 ## Estrutura técnica (o que viabiliza 1 dia)
 
-- **Stack:** Kaplay (ex-Kaboom.js) + Vite. Web, hot reload, deploy fácil (itch.io / Vercel).
-- **Scenes nativas:** cada minigame = 1 `scene`. Hub = 1 `scene`. `go("nome")` troca.
-- **Estado global compartilhado:** moeda + peças + upgrades num objeto único.
-- **Paralelizável:** cada pessoa do time pega 1 scene isolada, merge no fim.
+- **Stack:** Vue 3 + Vite + Canvas 2D puro (`requestAnimationFrame`). Sem engine de jogo, sem lib extra. Web, hot reload, deploy fácil (GitHub Pages / itch.io / Vercel).
+- **Scenes = componentes/fases:** cada minigame é uma fase própria (ex.: `RiverRaid.vue`). Troca de cena controlada por estado no Vue (`ref` de fase). Hub = cena principal.
+- **Render:** loop de jogo em `<canvas>` (contexto 2D), estado interno num objeto mutável fora da reatividade; só o HUD usa `ref` reativo.
+- **Estado global compartilhado:** moeda + peças + upgrades num objeto único (Vue reactive / módulo compartilhado).
+- **Paralelizável:** cada pessoa do time pega 1 fase/componente isolado, merge no fim.
 
 ```js
-scene("riverraid", () => { /* scroll + eventos */ })
-scene("hangar",    () => { /* montagem/upgrade */ })
-scene("abducao",   () => { /* minigame ação */ })
+// dentro de um componente .vue (script setup)
+const phase = ref('start')   // 'start' | 'playing' | 'paused' | 'over'
+const canvas = ref(null)
+let ctx = null, raf = 0, state = null
+// loop: ctx.clear → update(dt) → draw → requestAnimationFrame
 
 const save = {
   moeda: 0,
@@ -111,7 +114,7 @@ Não fazer 7 minigames. Fazer:
 
 ## Próximos passos
 
-- [ ] Scaffold Vite + Kaplay + esqueleto de scenes + estado global
+- [ ] Scaffold Vite + Vue + `<canvas>` + esqueleto de fases + estado global
 - [ ] River Raid hub jogável (scroll + eventos + colisão)
 - [ ] Hangar (drag & drop peças)
 - [ ] 1 minigame de ação
