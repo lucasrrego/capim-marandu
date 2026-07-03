@@ -5,6 +5,7 @@ import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import AbductionGame from './AbductionGame.vue'
 import OrbitalDefense from './OrbitalDefense.vue'
+import MarioGame from './MarioGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
@@ -26,7 +27,7 @@ const N_ROWS = Math.ceil(H / ROW_H) + 3
 const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
 // componente de cada minigame; ids desconhecidos caem no placeholder
-const MINIGAME_VIEWS = { abduction: AbductionGame, orbital: OrbitalDefense }
+const MINIGAME_VIEWS = { abduction: AbductionGame, orbital: OrbitalDefense, mario: MarioGame }
 const minigameView = computed(() => MINIGAME_VIEWS[activeMinigame.value.game] ?? MinigameScreen)
 let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
 const score = ref(0)
@@ -233,12 +234,14 @@ function stepGen(g) {
   return { left: g.left, right: g.right }
 }
 
-// sorteia warps distintos (1..5) por corrida: um pra abdução, outro pra defesa orbital
+// sorteia warps distintos (1..5) por corrida: abdução, defesa orbital e Gugu Bros
 function pickMinigameSegments() {
-  const abductionSegment = Math.floor(rand(1, 6))
-  let orbitalSegment = Math.floor(rand(1, 5))
-  if (orbitalSegment >= abductionSegment) orbitalSegment++
-  return { abductionSegment, orbitalSegment }
+  const segs = [1, 2, 3, 4, 5]
+  for (let i = segs.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(0, i + 1))
+    ;[segs[i], segs[j]] = [segs[j], segs[i]]
+  }
+  return { abductionSegment: segs[0], orbitalSegment: segs[1], marioSegment: segs[2] }
 }
 
 function newState() {
@@ -305,7 +308,7 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
-    ...pickMinigameSegments(),   // quais warps (1..5) viram a abdução e a defesa orbital
+    ...pickMinigameSegments(),   // quais warps (1..5) viram cada minigame
     coinAcc: 0,
     runCoins: 0,
     fuelKills: 0,
@@ -1097,6 +1100,7 @@ function togglePause() {
 function enterMinigame(warp) {
   const game = warp.segment === state.abductionSegment ? 'abduction'
     : warp.segment === state.orbitalSegment ? 'orbital'
+    : warp.segment === state.marioSegment ? 'mario'
     : 'placeholder'
   minigameFromStart = false
   activeMinigame.value = { segment: warp.segment, color: warp.color, game }
@@ -1115,6 +1119,13 @@ function openOrbital() {
   activeMinigame.value = { segment: 1, color: '#6cc6ff', game: 'orbital' }
   phase.value = 'minigame'
 }
+
+function openMario() {
+  minigameFromStart = true
+  activeMinigame.value = { segment: 1, color: '#ff4d4d', game: 'mario' }
+  phase.value = 'minigame'
+}
+
 
 function exitMinigame() {
   phase.value = 'playing'
@@ -1241,6 +1252,7 @@ onUnmounted(() => {
           :dev="isDev"
           @minigame="openAbduction"
           @orbital="openOrbital"
+          @mario="openMario"
         />
         <button v-if="phase === 'start' && isDev" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
 

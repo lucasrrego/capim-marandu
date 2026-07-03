@@ -305,6 +305,23 @@ export const VO_BAIANA = [
   '.pp.pppppppp.pp.',
 ]
 
+// ---- Minigame "Gugu Bros" (plataforma) -----------------------------------
+
+// Alien malvado rastejante (o "goomba" do Gugu Bros): corpo roxo, olhos
+// vermelhos furiosos e presas. Grade 12x10, anda no chão e nas plataformas.
+export const ALIEN_WALKER = [
+  '..p......p..',
+  '...p....p...',
+  '..pppppppp..',
+  '.pppppppppp.',
+  '.pkkppppkkp.',
+  '.prkpppprkp.',
+  '.pppppppppp.',
+  '.ppwpwwpwpp.',
+  '..pppppppp..',
+  '..pp.pp.pp..',
+]
+
 // Repórter loira gritando (busto): cabelo loiro (L), pele (s), olhos (k),
 // boca aberta (r/k), camisa do Brasil (y) com gola azul (j). Grade 13.
 export const BLONDE_WOMAN = [
