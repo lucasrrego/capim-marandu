@@ -25,6 +25,7 @@ const BOMB_CD = 1500           // ms entre lançamentos de mini-bombas
 const ENEMY_BULLET_SPD = 210
 const BOMB_SPD = 150
 const BOMB_HOMING = 1.4        // quão forte a bomba corrige rumo ao player
+const BOMB_LIFE = 5            // s até a mini-bomba sumir se não acertar
 const PLAYER_SPD = 250
 const HIT_INVULN = 900         // ms de invuln após levar dano
 const REWARD = 60              // moedas ao vencer
@@ -109,7 +110,7 @@ function launchBombs() {
   const b = s.boss
   const n = 1 + Math.floor(rand(0, 2))   // 1 ou 2 bombas
   for (let i = 0; i < n; i++) {
-    s.bombs.push({ x: b.x + rand(-30, 30), y: BOSS_Y + BOSS_H / 2, w: 12, h: 12, vx: rand(-40, 40), vy: BOMB_SPD * 0.6 })
+    s.bombs.push({ x: b.x + rand(-30, 30), y: BOSS_Y + BOSS_H / 2, w: 12, h: 12, vx: rand(-40, 40), vy: BOMB_SPD * 0.6, t: BOMB_LIFE })
   }
 }
 
@@ -142,9 +143,11 @@ function update(dt) {
   p.y = Math.max(H * 0.45, Math.min(H - PH - 8, p.y))
   if (p.invuln > 0) p.invuln -= dt * 1000
 
-  // auto-fogo
+  // fogo: corrida normal exige apertar (espaço / ponteiro); teste dispara sozinho
+  const firing = props.short || keys.fire || pointerX != null
   p.fireCd -= dt * 1000
-  if (p.fireCd <= 0) { firePlayer(); p.fireCd = stats.fireCd }
+  if (firing && p.fireCd <= 0) { firePlayer(); p.fireCd = stats.fireCd }
+  else if (!firing && p.fireCd < 0) p.fireCd = 0   // pronto pra atirar no próximo toque
 
   // move projéteis
   for (const bl of s.bullets) bl.y -= 520 * dt
@@ -165,8 +168,9 @@ function update(dt) {
     bo.vy = (bo.vy / sp) * BOMB_SPD
     bo.x += bo.vx * dt
     bo.y += bo.vy * dt
+    bo.t -= dt
   }
-  s.bombs = s.bombs.filter((bo) => bo.y < H + 30 && bo.y > -30)
+  s.bombs = s.bombs.filter((bo) => bo.t > 0 && bo.y < H + 30 && bo.y > -30)
 
   updateParticles(dt)
 
@@ -314,6 +318,7 @@ function onKey(e, down) {
   if (k === 'arrowright' || k === 'd') keys.right = down
   if (k === 'arrowup' || k === 'w') keys.up = down
   if (k === 'arrowdown' || k === 's') keys.down = down
+  if (k === ' ') keys.fire = down
 }
 const kd = (e) => onKey(e, true)
 const ku = (e) => onKey(e, false)
