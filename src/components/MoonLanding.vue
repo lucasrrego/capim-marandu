@@ -42,28 +42,30 @@ const MOVE_ACCEL = 320       // aceleração lateral ao segurar ← / → (px/s�
 const VX_DAMP = 1.9          // atrito lateral (por segundo)
 const MAX_VX = 150           // velocidade lateral máxima
 const VX_SAFE = 28           // |vx| máximo no toque (senão tomba de lado)
-const PAD_W = 84             // largura da plataforma de pouso
+const PAD_W = 66             // largura da plataforma de pouso
+const PAD_CLEAR = 34         // folga sem prédios de cada lado do pad (corredor de descida)
 const GROUND_Y = H - 70      // topo do solo
 
 // ---- Times Square da Lua (Elon comprou e encheu de outdoor) ----
 // Paleta neon do design system (--px-*).
 const NEON = ['#9b7bff', '#6cc6ff', '#d0392e', '#ffd24d', '#6fcf5b', '#ff8a1a', '#ff6ea8']
-// Propagandas: história do Gugu/ET Bilu + aleatoriedades cafonas.
+// Propagandas: marcas cafonas + história do Gugu/ET Bilu.
 const ADS = [
-  ['ET BILU', 'ESTEVE', 'AQUI'],
+  ['VAI DE', 'BET'],
+  ['STAR', 'BUCKS'],
+  ['CAPIM'],
+  ['SEU AD', 'AQUI'],
   ['FOGUETES', 'DO GUGU'],
+  ['WIFI', 'GRATIS'],
+  ['ET BILU', 'AQUI'],
   ['TERNO', 'BRILHANTE'],
-  ['GANHE', 'PREMIOS!'],
-  ['TERRA', 'TOUR 2X'],
   ['LUA by', 'ELON'],
-  ['X BURGER', '1 CRED'],
   ['COMPRE', 'DOGE'],
   ['MARTE', '-50%'],
-  ['WIFI', 'GRATIS'],
-  ['OUTLET', 'ESPACIAL'],
-  ['CACHORRO', 'QUENTE'],
-  ['SEU AD', 'AQUI'],
 ]
+// Cores das janelas acesas
+const WINDOW_ON = ['#6cc6ff', '#37e0a0', '#ffe27a']
+const WINDOW_OFF = '#241b3a'
 
 // Faixa segura de velocidade em função do progresso (0 = topo, 1 = chão).
 // Encolhe de [2, 96] no alto até [2, 40] no chão (verde amplo).
@@ -96,24 +98,39 @@ function newState() {
   const margin = PAD_W / 2 + 24
   let padCx = rand(margin, W - margin)
   if (Math.abs(padCx - W / 2) < 90) padCx = padCx < W / 2 ? margin : W - margin
-  // skyline de outdoors (Times Square): prédios com telão neon
+  // camada de fundo (silhueta distante, decorativa, sem colisão)
+  const bgBuildings = []
+  let gx = -4
+  let gi = 0
+  while (gx < W) {
+    const gw = rand(30, 64)
+    bgBuildings.push({ i: gi, x: gx, w: gw, h: rand(60, 150) })
+    gx += gw + rand(-6, 6)
+    gi++
+  }
+  // prédios da frente (obstáculos): silhuetas com janelas, alguns com letreiro.
+  // Deixa um corredor livre em volta do pad (não pode encostar ao descer).
+  const clearL = padCx - PAD_W / 2 - PAD_CLEAR
+  const clearR = padCx + PAD_W / 2 + PAD_CLEAR
   const buildings = []
-  const nb = 6
-  const bw = W / nb
-  const adPool = [...ADS]
-  for (let i = 0; i < nb; i++) {
-    const ads = []
-    for (let j = 0; j < 3 && adPool.length; j++) {
-      ads.push(adPool.splice(Math.floor(rand(0, adPool.length)), 1)[0])
-    }
+  let bx = rand(2, 10)
+  let i = 0
+  while (bx < W - 12) {
+    const bw = rand(46, 88)
+    const gap = rand(6, 16)
+    // pula o corredor do pad
+    if (bx < clearR && bx + bw > clearL) { bx = clearR + gap; continue }
     buildings.push({
       i,
-      x: i * bw + 3,
-      w: bw - 6,
-      h: rand(90, 210),
+      x: bx,
+      w: bw,
+      h: rand(46, 120),
       color: NEON[i % NEON.length],
-      ads: ads.length ? ads : [ADS[i % ADS.length]],
+      hasSign: i % 2 === 0,          // só alguns têm letreiro
+      antenna: rand(0, 1) > 0.5,
     })
+    bx += bw + gap
+    i++
   }
   return {
     alt: START_ALT,
@@ -127,11 +144,16 @@ function newState() {
     boom: 0,           // raio da explosão (crash)
     pad: { cx: padCx, w: PAD_W },
     buildings,
+    bgBuildings,
     craters, stars,
   }
 }
 
 function progress(s) { return 1 - Math.min(1, s.alt / START_ALT) }
+// y de tela da nave em função da altitude (base encosta no pad em alt=0)
+function shipScreenY(s) {
+  return 60 + progress(s) * (GROUND_Y - 6 - SHIP_H - 60)
+}
 function beatDist(s) {
   const ph = (s.clock % BEAT_MS) / BEAT_MS
   return Math.min(ph, 1 - ph)
@@ -203,6 +225,20 @@ function update(dt, s) {
     s.vx = clamp(s.vx, -MAX_VX, MAX_VX)
     s.x = clamp(s.x + s.vx * dt, SHIP_W / 2, W - SHIP_W / 2)
 
+    // colisão com prédios: não pode encostar ao descer (use o corredor do pad)
+    const shipBottom = shipScreenY(s) + SHIP_H
+    const shipL = s.x - SHIP_W / 2
+    const shipR = s.x + SHIP_W / 2
+    for (const b of s.buildings) {
+      const top = GROUND_Y - b.h
+      if (shipBottom > top && shipR > b.x && shipL < b.x + b.w) {
+        result.value = { reason: 'Bateu num prédio! Desça pelo corredor da plataforma.' }
+        s.boom = 1
+        stage.value = 'crashed'
+        return
+      }
+    }
+
     emit('fuel', Math.round(s.fuel))
     emit('speed', String(Math.round(s.vy)))
     if (s.alt <= 0) { s.alt = 0; touchdown(s) }
@@ -211,63 +247,79 @@ function update(dt, s) {
   }
 }
 
-// ---- Times Square: prédios com outdoors neon piscando ----
+// grade de janelas acesas dentro de um prédio (estilo skyline pixel art)
+function drawWindows(s, b, top, cell, dim) {
+  const flick = Math.floor(s.clock / 600)
+  for (let wy = top + 6; wy < GROUND_Y - 5; wy += cell) {
+    for (let wx = b.x + 4; wx < b.x + b.w - 4; wx += cell) {
+      const seed = (b.i * 31 + wx * 7 + wy * 13)
+      let on = seed % 5 !== 0
+      if ((flick + Math.floor(wx) * 3 + Math.floor(wy)) % 23 === 0) on = !on
+      if (!on) { ctx.fillStyle = WINDOW_OFF; ctx.fillRect(wx, wy, cell - 3, cell - 3); continue }
+      let col = WINDOW_ON[seed % WINDOW_ON.length]
+      if (dim) col = col === '#ffe27a' ? '#8a7f5a' : '#3a6a86'
+      ctx.fillStyle = col
+      ctx.fillRect(wx, wy, cell - 3, cell - 3)
+    }
+  }
+}
+
+// ---- Skyline da Times Square lunar (referência: prédios pixel art) ----
 function drawCity(s) {
   const gy = GROUND_Y
-  // garland de lâmpadas piscando cruzando o céu
-  ctx.save()
-  for (let i = 0; i <= 24; i++) {
-    const gx = (i / 24) * W
-    const gyy = 26 + Math.sin(i * 0.9) * 10
-    const on = (Math.floor(s.clock / 180) + i) % 2 === 0
-    ctx.fillStyle = on ? NEON[i % NEON.length] : '#2a2142'
-    ctx.fillRect(gx - 1, gyy - 1, 3, 3)
+
+  // camada de fundo (silhueta distante, mais clara, janelas apagadas)
+  for (const b of s.bgBuildings) {
+    const top = gy - b.h
+    ctx.fillStyle = '#2a2142'
+    ctx.fillRect(b.x, top, b.w, b.h)
+    drawWindows(s, b, top, 9, true)
   }
-  ctx.restore()
 
   ctx.textAlign = 'center'
+  const adBase = Math.floor(s.clock / 1600)   // propagandas alternam entre os letreiros
   for (const b of s.buildings) {
     const top = gy - b.h
-    // prédio
+    // silhueta escura
     ctx.fillStyle = '#150f28'
     ctx.fillRect(b.x, top, b.w, b.h)
-    ctx.strokeStyle = '#2a2142'
-    ctx.lineWidth = 1
-    ctx.strokeRect(b.x + 0.5, top + 0.5, b.w - 1, b.h - 1)
 
-    // janelinhas acesas (fileiras)
-    for (let wy = top + 44; wy < gy - 6; wy += 12) {
-      for (let wx = b.x + 5; wx < b.x + b.w - 5; wx += 10) {
-        const lit = (Math.floor(s.clock / 400) + wx + wy) % 3 === 0
-        ctx.fillStyle = lit ? '#ffe27a' : '#241b3a'
-        ctx.fillRect(wx, wy, 4, 5)
+    // hitbox sem propaganda → antena com luz vermelha piscando (aviso).
+    // prédio com letreiro não pisca vermelho (o letreiro já sinaliza).
+    if (!b.hasSign) {
+      const ax = Math.round(b.x + b.w * 0.5)
+      ctx.fillStyle = '#0c0a18'
+      ctx.fillRect(ax - 1, top - 8, 2, 8)
+      if (Math.floor(s.clock / 400) % 2 === 0) {
+        ctx.fillStyle = '#ff3b30'
+        ctx.fillRect(ax - 2, top - 11, 4, 4)
       }
     }
 
-    // telão / outdoor
-    const scrX = b.x + 5, scrY = top + 6
-    const scrW = b.w - 10, scrH = Math.min(58, b.h * 0.42)
-    ctx.fillStyle = '#04040a'
-    ctx.fillRect(scrX, scrY, scrW, scrH)
-    // moldura neon
-    ctx.strokeStyle = b.color
-    ctx.lineWidth = 2
-    ctx.strokeRect(scrX + 1, scrY + 1, scrW - 2, scrH - 2)
-    // lâmpadas correndo na moldura (marquee)
-    for (let m = 0; m < scrW; m += 8) {
-      const on = (Math.floor(s.clock / 120) + m) % 2 === 0
-      ctx.fillStyle = on ? '#ffe27a' : '#3a2a6a'
-      ctx.fillRect(scrX + m, scrY - 2, 3, 3)
-      ctx.fillRect(scrX + m, scrY + scrH - 1, 3, 3)
-    }
-    // texto da propaganda (troca sozinho = cafona)
-    const ad = b.ads[Math.floor(s.clock / 1500 + b.i) % b.ads.length]
-    ctx.fillStyle = b.color
-    ctx.font = 'bold 8px "Press Start 2P", monospace'
-    const lh = 11
-    const ty = scrY + scrH / 2 - ((ad.length - 1) * lh) / 2 + 3
-    for (let li = 0; li < ad.length; li++) {
-      ctx.fillText(ad[li], scrX + scrW / 2, ty + li * lh)
+    // janelas em grade
+    drawWindows(s, b, top, 8, false)
+
+    // letreiro neon só em alguns prédios
+    if (b.hasSign) {
+      const ad = ADS[(adBase + b.i) % ADS.length]
+      const maxLen = ad.reduce((m, l) => Math.max(m, l.length), 1)
+      const sw = b.w - 8
+      const fontPx = clamp(Math.floor((sw - 4) / maxLen), 5, 9)
+      const lh = fontPx + 3
+      const sh = ad.length * lh + 8
+      const sx = b.x + 4, sy = top + 6
+      ctx.fillStyle = '#04040a'
+      ctx.fillRect(sx, sy, sw, sh)
+      ctx.strokeStyle = b.color
+      ctx.lineWidth = 2
+      ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2)
+      ctx.save()
+      ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip()
+      ctx.fillStyle = b.color
+      ctx.font = `${fontPx}px "Press Start 2P", monospace`
+      const ty = sy + 4 + fontPx
+      for (let li = 0; li < ad.length; li++) ctx.fillText(ad[li], sx + sw / 2, ty + li * lh)
+      ctx.restore()
     }
   }
   ctx.textAlign = 'start'
@@ -338,9 +390,8 @@ function draw(s) {
     ctx.beginPath(); ctx.arc(bx, groundY - 8, 3, 0, Math.PI * 2); ctx.fill()
   }
 
-  const t = 1 - Math.min(1, s.alt / START_ALT)
-  // no toque (t=1) a base da nave encosta no topo da plataforma (groundY - 6)
-  const shipY = 60 + t * (groundY - 6 - SHIP_H - 60)
+  // no toque a base da nave encosta no topo da plataforma (groundY - 6)
+  const shipY = shipScreenY(s)
 
   // guia vertical de alinhamento (fica verde quando a nave está sobre a plataforma)
   if (stage.value === 'descent') {
