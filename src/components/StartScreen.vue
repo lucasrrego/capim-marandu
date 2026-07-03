@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { drawSprite, GUGU } from '../data/pixelSprites.js'
 import { playConfirm, playSelect, playSparkle, startTheme, stopTheme } from '../audio/sfx.js'
 
-const emit = defineEmits(['play', 'achievements'])
+const emit = defineEmits(['play', 'achievements', 'minigame'])
 
 const guguCanvas = ref(null)
 const GUGU_SCALE = 8
@@ -22,6 +22,12 @@ function play() {
   armAudio()
   playConfirm()
   emit('play')
+}
+
+function openMinigame() {
+  armAudio()
+  playConfirm()
+  emit('minigame')
 }
 
 function onKey(e) {
@@ -84,6 +90,7 @@ onUnmounted(() => {
       <p class="start-subtitle">Rumo à Lua</p>
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
+      <button class="start-btn start-btn-mini" @click="openMinigame" @pointerenter="playSelect">🛸 Sonho da Vó Baiana</button>
       <button class="start-ach" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
     </div>
   </div>
@@ -206,6 +213,15 @@ onUnmounted(() => {
 }
 .start-btn:hover { filter: brightness(1.12); }
 .start-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #5a1510; }
+
+.start-btn-mini {
+  margin-top: 10px;
+  font-size: 0.62rem;
+  background: var(--px-purple, #9b7bff);
+  border-color: #4a2f8f;
+  box-shadow: 0 4px 0 #35216a, 0 0 18px rgba(155, 123, 255, 0.5);
+}
+.start-btn-mini:active { box-shadow: 0 1px 0 #35216a; }
 
 .start-ach {
   margin-top: 10px;
