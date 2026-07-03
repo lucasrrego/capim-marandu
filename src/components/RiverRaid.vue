@@ -149,8 +149,8 @@ function spawnEnemy(s) {
   const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
   const roll = Math.random()
   let type
-  if (roll < 0.25) type = 'fuel'
-  else if (roll < 0.62) type = 'asteroid'
+  if (roll < 0.35) type = 'fuel'
+  else if (roll < 0.675) type = 'asteroid'
   else type = 'meteor'
   const w = type === 'fuel' ? 26 : type === 'asteroid' ? 40 : 30
   const h = type === 'fuel' ? 30 : type === 'asteroid' ? 36 : 28
@@ -651,49 +651,72 @@ onUnmounted(() => {
 
 <template>
   <div class="rr">
-    <h1 class="rr-title">🚀 River Raid</h1>
+    <div class="rr-main">
+      <div class="rr-stage">
+        <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-    <div class="rr-hud">
-      <span>PONTOS <b>{{ score }}</b></span>
-      <span>VIDAS <b>{{ '❤️'.repeat(lives) || '—' }}</b></span>
-      <span>VEL <b>{{ speedLabel }}</b></span>
-      <span>MOEDAS <b>🪙 {{ coins }}</b></span>
-    </div>
+        <div v-if="phase === 'start'" class="rr-overlay">
+          <h2>River Raid</h2>
+          <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
+          <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
+          <button @click="enterHangar">▶ Jogar</button>
+        </div>
 
-    <div class="rr-fuel">
-      <div class="rr-fuel-bar" :style="{ width: fuelPct + '%' }"
-           :class="{ low: fuelPct < 25 }"></div>
-      <span class="rr-fuel-label">FUEL</span>
-    </div>
+        <HangarScreen
+          v-else-if="phase === 'hangar'"
+          v-model:loadout="hangarLoadout"
+          class="rr-hangar"
+          @launch="startGame"
+          @back="phase = 'start'"
+        />
 
-    <div class="rr-stage">
-      <canvas ref="canvas" :width="W" :height="H"></canvas>
+        <div v-else-if="phase === 'paused'" class="rr-overlay">
+          <h2>Pausado</h2>
+          <button @click="togglePause">▶ Continuar</button>
+        </div>
 
-      <div v-if="phase === 'start'" class="rr-overlay">
-        <h2>River Raid</h2>
-        <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
-        <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-        <button @click="enterHangar">▶ Jogar</button>
+        <div v-else-if="phase === 'over'" class="rr-overlay">
+          <h2>Fim de jogo</h2>
+          <p>Pontuação: <b>{{ score }}</b></p>
+          <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
       </div>
 
-      <HangarScreen
-        v-else-if="phase === 'hangar'"
-        v-model:loadout="hangarLoadout"
-        class="rr-hangar"
-        @launch="startGame"
-        @back="phase = 'start'"
-      />
+      <aside class="rr-panel">
+        <h1 class="rr-title">River Raid</h1>
 
-      <div v-else-if="phase === 'paused'" class="rr-overlay">
-        <h2>Pausado</h2>
-        <button @click="togglePause">▶ Continuar</button>
-      </div>
+        <div class="rr-stat">
+          <span class="rr-stat-label">Pontos</span>
+          <span class="rr-stat-value">{{ score }}</span>
+        </div>
 
-      <div v-else-if="phase === 'over'" class="rr-overlay">
-        <h2>Fim de jogo</h2>
-        <p>Pontuação: <b>{{ score }}</b></p>
-        <button @click="enterHangar">↻ Jogar de novo</button>
-      </div>
+        <div class="rr-stat">
+          <span class="rr-stat-label">Moedas</span>
+          <span class="rr-stat-value rr-coins">🪙 {{ coins }}</span>
+        </div>
+
+        <div class="rr-stat">
+          <span class="rr-stat-label">Vidas</span>
+          <span class="rr-lives">
+            <span v-for="n in lives" :key="n" class="rr-life">🚀</span>
+            <span v-if="lives <= 0" class="rr-dash">—</span>
+          </span>
+        </div>
+
+        <div class="rr-stat">
+          <span class="rr-stat-label">Velocidade</span>
+          <span class="rr-stat-value">{{ speedLabel }}</span>
+        </div>
+
+        <div class="rr-stat rr-stat-fuel">
+          <span class="rr-stat-label">Combustível</span>
+          <div class="rr-fuel">
+            <div class="rr-fuel-bar" :style="{ width: fuelPct + '%' }"
+                 :class="{ low: fuelPct < 25 }"></div>
+            <span class="rr-fuel-label">{{ fuelPct }}%</span>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <div class="rr-touch">
@@ -715,27 +738,96 @@ onUnmounted(() => {
 .rr {
   /* largura do jogo limitada por largura E altura da tela, mantendo 480x640 */
   --gw: min(92vw, 480px, (100dvh - 190px) * 0.75);
+  --hud-dim: #8f83b3;
+  --hud-glow: rgba(155, 123, 255, 0.65);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 12px;
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: 'Orbitron', ui-monospace, Consolas, monospace;
 }
-.rr-title { margin: 0; font-size: 1.6rem; color: var(--text-h, #111); }
-.rr-hud {
+
+.rr-main {
   display: flex;
-  gap: 22px;
-  font-size: 0.95rem;
-  letter-spacing: 0.5px;
+  align-items: stretch;
+  gap: 16px;
 }
-.rr-hud b { color: var(--accent, #aa3bff); }
+
+.rr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  width: 200px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(52, 40, 84, 0.6), rgba(18, 13, 32, 0.72));
+  border: 1px solid rgba(155, 123, 255, 0.35);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4), inset 0 0 34px rgba(120, 90, 220, 0.09);
+}
+
+.rr-title {
+  margin: 0 0 2px;
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 0 12px var(--hud-glow), 0 0 2px #fff;
+}
+
+.rr-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.rr-stat-fuel { margin-top: auto; align-self: stretch; }
+
+.rr-stat-label {
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--hud-dim);
+}
+
+.rr-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 10px var(--hud-glow);
+  font-variant-numeric: tabular-nums;
+}
+.rr-coins {
+  color: #ffd24d;
+  text-shadow: 0 0 10px rgba(255, 207, 58, 0.6);
+}
+
+.rr-lives {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  font-size: 1.5rem;
+  line-height: 1;
+  min-height: 1.5rem;
+}
+.rr-life { filter: drop-shadow(0 0 5px rgba(255, 207, 58, 0.6)); }
+.rr-dash { color: var(--hud-dim); }
+
 .rr-fuel {
   position: relative;
-  width: var(--gw);
-  height: 18px;
-  background: #222;
-  border-radius: 4px;
+  width: 100%;
+  height: 22px;
+  margin-top: 4px;
+  background: #17121f;
+  border: 1px solid rgba(155, 123, 255, 0.3);
+  border-radius: 6px;
   overflow: hidden;
 }
 .rr-fuel-bar {
@@ -749,7 +841,8 @@ onUnmounted(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px #000;
 }
@@ -818,5 +911,29 @@ onUnmounted(() => {
 .rr-touch button:active { filter: brightness(1.4); }
 @media (hover: hover) and (pointer: fine) {
   .rr-touch { display: none; }
+}
+
+/* Telas estreitas: painel desce e vira uma faixa de status */
+@media (max-width: 720px) {
+  .rr-main { flex-direction: column; align-items: center; }
+  .rr-panel {
+    width: var(--gw);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 20px;
+    padding: 12px 14px;
+  }
+  .rr-title {
+    width: 100%;
+    text-align: center;
+    font-size: 1.4rem;
+    line-height: 1;
+    margin: 0;
+  }
+  .rr-stat-value { font-size: 1.5rem; }
+  .rr-lives { font-size: 1.2rem; }
+  .rr-stat-fuel { margin-top: 0; flex: 1 1 100%; }
 }
 </style>
