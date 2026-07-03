@@ -650,3 +650,25 @@ export function startHangarMusic(volume = 0.12) { startMusic(HANGAR_TRACK, volum
 
 /** Trilha de aventura do jogo principal. */
 export function startGameMusic(volume = 0.1) { startMusic(GAME_TRACK, volume) }
+
+// Boss — tensa, "chefão final": menor, baixo pulsante, cromatismo e tritono.
+const BOSS_TRACK = {
+  lead: [
+    62, 65, 68, 65, 62, null, 61, null,
+    63, 66, 69, 66, 63, null, 62, null,
+    62, 65, 68, 65, 62, 61, 60, 59,
+    58, 62, 65, 69, 68, 65, 62, 58,
+  ],
+  bass: [
+    38, 38, 38, 38, 38, 38, 38, 38,
+    39, 39, 39, 39, 39, 39, 39, 39,
+    38, 38, 38, 38, 38, 38, 38, 38,
+    40, 40, 40, 40, 44, 44, 44, 44,
+  ],
+  step: 0.12,
+  leadType: 'square', leadGain: 0.34, leadDur: 0.95,
+  bassType: 'triangle', bassGain: 0.55, bassDur: 0.9,
+}
+
+/** Trilha tensa da batalha de chefe. */
+export function startBossMusic(volume = 0.16) { startMusic(BOSS_TRACK, volume) }

@@ -4,6 +4,7 @@
 // perseguem o jogador. O jogador (a nave montada) atira pra cima até zerar o HP.
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { buildShipStats, drawShip } from '../data/shipParts.js'
+import { startBossMusic, stopMusic } from '../audio/sfx.js'
 
 const props = defineProps({
   loadout: { type: Object, required: true },
@@ -212,11 +213,13 @@ function updateParticles(dt) {
 
 function win() {
   result.value = 'win'
+  stopMusic()   // encerra a tensão
   boom(s.boss.x, BOSS_Y, '#ffcf3a', 40)
   boom(s.boss.x, BOSS_Y, '#ff5230', 40)
 }
 function lose() {
   result.value = 'lose'
+  stopMusic()
 }
 
 // ---- Render -------------------------------------------------------------
@@ -335,12 +338,14 @@ onMounted(() => {
   emit('hp', playerHp.value)   // valor inicial pra barra lateral
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
+  startBossMusic()   // trilha tensa de chefão
   raf = requestAnimationFrame(frame)
 })
 onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', kd)
   window.removeEventListener('keyup', ku)
+  stopMusic()
 })
 </script>
 
