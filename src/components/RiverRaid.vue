@@ -985,7 +985,11 @@ onUnmounted(() => {
           <button @click="enterHangar">↻ Jogar de novo</button>
         </div>
 
-        <div class="rr-progress" :title="Math.round(progressPct) + '%'">
+        <div
+          v-if="phase === 'playing' || phase === 'paused'"
+          class="rr-progress"
+          :title="Math.round(progressPct) + '%'"
+        >
           <div class="rr-progress-fill" :style="{ height: progressPct + '%' }"></div>
           <span class="rr-progress-flag">🏁</span>
         </div>
