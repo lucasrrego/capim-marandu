@@ -4,6 +4,7 @@ import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
 import AbductionGame from './AbductionGame.vue'
+import OrbitalDefense from './OrbitalDefense.vue'
 import MarioGame from './MarioGame.vue'
 import BossBattle from './BossBattle.vue'
 import BattleTransition from './BattleTransition.vue'
@@ -30,6 +31,9 @@ const N_ROWS = Math.ceil(H / ROW_H) + 3
 // ---- HUD reativo ----
 const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'minigames' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'boss' | 'approach' | 'moon' | 'ending' | 'achievements' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
+// componente de cada minigame; ids desconhecidos caem no placeholder
+const MINIGAME_VIEWS = { abduction: AbductionGame, orbital: OrbitalDefense, mario: MarioGame }
+const minigameView = computed(() => MINIGAME_VIEWS[activeMinigame.value.game] ?? MinigameScreen)
 let minigameFromStart = false        // true quando o minigame foi aberto pelo menu (teste, sem corrida)
 let bossFromMenu = false             // true quando o chefe foi aberto pelo menu de mini-games
 const score = ref(0)
@@ -246,10 +250,17 @@ function stepGen(g) {
   return { left: g.left, right: g.right }
 }
 
+// sorteia warps distintos (1..5) por corrida: abdução, defesa orbital e Gugu Bros
+function pickMinigameSegments() {
+  const segs = [1, 2, 3, 4, 5]
+  for (let i = segs.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(0, i + 1))
+    ;[segs[i], segs[j]] = [segs[j], segs[i]]
+  }
+  return { abductionSegment: segs[0], orbitalSegment: segs[1], marioSegment: segs[2] }
+}
+
 function newState() {
-  // cada warp vira um minigame de verdade; os tipos giram e repetem quando
-  // todos já foram jogados. Offset aleatório varia a ordem por corrida.
-  const minigameOffset = Math.floor(rand(0, MINIGAME_TYPES.length))
   const gen = makeGen()
   const rows = []
   // spawn começa com o canal aberto (paredes só nas bordas)
@@ -318,7 +329,7 @@ function newState() {
     nextWarpAt: SHORT_GOAL / (WARP_SEGMENTS + 1),
     warpSegment: 0,
     bossDone: false,                            // chefe na metade do percurso (uma vez)
-    minigameOffset,
+    ...pickMinigameSegments(),   // quais warps (1..5) viram cada minigame
     coinAcc: 0,
     runCoins: 0,
     fuelKills: 0,
@@ -1150,9 +1161,10 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  // gira pelos tipos de minigame; repete quando todos já foram jogados
-  const i = (warp.segment - 1 + state.minigameOffset) % MINIGAME_TYPES.length
-  const game = MINIGAME_TYPES[i]
+  const game = warp.segment === state.abductionSegment ? 'abduction'
+    : warp.segment === state.orbitalSegment ? 'orbital'
+    : warp.segment === state.marioSegment ? 'mario'
+    : 'placeholder'
   minigameFromStart = false
   activeMinigame.value = { segment: warp.segment, color: warp.color, game }
   phase.value = 'minigame'
@@ -1165,16 +1177,17 @@ function openAbduction() {
   phase.value = 'minigame'
 }
 
+function openOrbital() {
+  minigameFromStart = true
+  activeMinigame.value = { segment: 1, color: '#6cc6ff', game: 'orbital' }
+  phase.value = 'minigame'
+}
+
 function openMario() {
   minigameFromStart = true
   activeMinigame.value = { segment: 1, color: '#ff4d4d', game: 'mario' }
   phase.value = 'minigame'
 }
-
-// mapa nome → componente do minigame (tipos não mapeados caem no placeholder)
-const MINIGAMES = { abduction: AbductionGame, mario: MarioGame }
-// tipos jogáveis nos warps, na ordem em que giram (repetem quando esgotam)
-const MINIGAME_TYPES = Object.keys(MINIGAMES)
 
 // Menu de mini-games (a partir da tela inicial)
 function openMinigamesMenu() {
@@ -1184,6 +1197,7 @@ function openMinigamesMenu() {
 // Lança um mini-game em modo avulso (volta pro menu ao terminar).
 function launchMinigame(id) {
   if (id === 'abduction') openAbduction()
+  else if (id === 'orbital') openOrbital()
   else if (id === 'mario') openMario()
   else if (id === 'moon') enterMoon(true)
   else if (id === 'boss') { bossFromMenu = true; playTransition('boss') }
@@ -1402,7 +1416,7 @@ onUnmounted(() => {
         />
 
         <component
-          :is="MINIGAMES[activeMinigame.game] ?? MinigameScreen"
+          :is="minigameView"
           v-else-if="phase === 'minigame'"
           class="rr-hangar"
           :segment="activeMinigame.segment"
