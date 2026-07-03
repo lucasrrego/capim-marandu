@@ -9,12 +9,13 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'over'
+const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'over' | 'won'
 const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
+const progressPct = ref(0)             // % da distância total percorrida
 const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
 const coins = ref(0)
 
@@ -31,6 +32,7 @@ const BASE_SPEED = 120               // px/s de rolagem
 const MIN_SPEED = 80
 const MAX_SPEED = 280
 const FUEL_MAX = 100
+const GOAL_DISTANCE = 24000           // px de rolagem até a vitória
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
@@ -288,6 +290,15 @@ function update(dt, s) {
 
   while (s.distance >= s.nextWarpAt && s.warpSegment < 5) spawnWarp(s)
 
+  // vitória: chegou ao fim do percurso
+  if (s.distance >= GOAL_DISTANCE) {
+    s.distance = GOAL_DISTANCE
+    progressPct.value = 100
+    s.over = true
+    phase.value = 'won'
+    return
+  }
+
   // rolagem do terreno + reciclagem
   let minY = Infinity
   for (const r of s.rows) { r.y += move; if (r.y < minY) minY = r.y }
@@ -413,6 +424,7 @@ function update(dt, s) {
   score.value = Math.floor(s.score)
   fuelPct.value = Math.max(0, Math.round((s.fuel / FUEL_MAX) * 100))
   speedLabel.value = (s.speed / BASE_SPEED).toFixed(1) + 'x'
+  progressPct.value = Math.min(100, (s.distance / GOAL_DISTANCE) * 100)
 }
 
 // ---- Render ----
@@ -670,6 +682,7 @@ function startGame(loadout) {
   score.value = 0
   lives.value = shipStats.startLives
   fuelPct.value = 100
+  progressPct.value = 0
   phase.value = 'playing'
   last = 0
 }
@@ -776,6 +789,18 @@ onUnmounted(() => {
           <h2>Fim de jogo</h2>
           <p>Pontuação: <b>{{ score }}</b></p>
           <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
+
+        <div v-else-if="phase === 'won'" class="rr-overlay">
+          <h2>🏆 Você venceu!</h2>
+          <p>Chegou ao fim do percurso.</p>
+          <p>Pontuação: <b>{{ score }}</b></p>
+          <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
+
+        <div class="rr-progress" :title="Math.round(progressPct) + '%'">
+          <div class="rr-progress-fill" :style="{ height: progressPct + '%' }"></div>
+          <span class="rr-progress-flag">🏁</span>
         </div>
       </div>
 
@@ -959,6 +984,36 @@ onUnmounted(() => {
 .rr-hangar {
   position: absolute;
   inset: 0;
+}
+.rr-progress {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  right: 8px;
+  width: 10px;
+  border-radius: 6px;
+  background: rgba(23, 18, 31, 0.7);
+  border: 1px solid rgba(155, 123, 255, 0.35);
+  overflow: hidden;
+  z-index: 2;
+  pointer-events: none;
+}
+.rr-progress-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(0deg, #37e0a0, #12c2c2, #9b7bff);
+  box-shadow: 0 0 8px rgba(155, 123, 255, 0.6);
+  transition: height 0.15s linear;
+}
+.rr-progress-flag {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1;
 }
 .rr-overlay {
   position: absolute;
