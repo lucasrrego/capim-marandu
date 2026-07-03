@@ -168,6 +168,16 @@ export function drawMoon(ctx, cx, cy, r) {
   // sombreado do terminador (borda inferior direita mais escura)
   ctx.fillStyle = 'rgba(20, 15, 35, 0.18)'
   ctx.beginPath(); ctx.arc(cx + r * 0.35, cy + r * 0.35, r, 0, Math.PI * 2); ctx.fill()
+  // luzes de Times Square (Elon comprou e encheu de neon)
+  const lights = [
+    ['#9b7bff', -0.30, 0.05], ['#6cc6ff', 0.10, -0.25], ['#d0392e', 0.35, 0.28],
+    ['#ffd24d', -0.10, 0.40], ['#6fcf5b', 0.42, -0.05], ['#ff6ea8', -0.45, -0.15],
+    ['#ff8a1a', 0.05, 0.12], ['#ffe27a', -0.20, -0.35],
+  ]
+  for (const [col, dx, dy] of lights) {
+    ctx.fillStyle = col
+    ctx.fillRect(cx + dx * r - 1.5, cy + dy * r - 1.5, 3, 3)
+  }
   ctx.restore()
 }
 

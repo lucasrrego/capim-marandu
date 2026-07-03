@@ -45,6 +45,26 @@ const VX_SAFE = 28           // |vx| máximo no toque (senão tomba de lado)
 const PAD_W = 84             // largura da plataforma de pouso
 const GROUND_Y = H - 70      // topo do solo
 
+// ---- Times Square da Lua (Elon comprou e encheu de outdoor) ----
+// Paleta neon do design system (--px-*).
+const NEON = ['#9b7bff', '#6cc6ff', '#d0392e', '#ffd24d', '#6fcf5b', '#ff8a1a', '#ff6ea8']
+// Propagandas: história do Gugu/ET Bilu + aleatoriedades cafonas.
+const ADS = [
+  ['ET BILU', 'ESTEVE', 'AQUI'],
+  ['FOGUETES', 'DO GUGU'],
+  ['TERNO', 'BRILHANTE'],
+  ['GANHE', 'PREMIOS!'],
+  ['TERRA', 'TOUR 2X'],
+  ['LUA by', 'ELON'],
+  ['X BURGER', '1 CRED'],
+  ['COMPRE', 'DOGE'],
+  ['MARTE', '-50%'],
+  ['WIFI', 'GRATIS'],
+  ['OUTLET', 'ESPACIAL'],
+  ['CACHORRO', 'QUENTE'],
+  ['SEU AD', 'AQUI'],
+]
+
 // Faixa segura de velocidade em função do progresso (0 = topo, 1 = chão).
 // Encolhe de [2, 96] no alto até [2, 40] no chão (verde amplo).
 function safeBand(prog) {
@@ -76,6 +96,25 @@ function newState() {
   const margin = PAD_W / 2 + 24
   let padCx = rand(margin, W - margin)
   if (Math.abs(padCx - W / 2) < 90) padCx = padCx < W / 2 ? margin : W - margin
+  // skyline de outdoors (Times Square): prédios com telão neon
+  const buildings = []
+  const nb = 6
+  const bw = W / nb
+  const adPool = [...ADS]
+  for (let i = 0; i < nb; i++) {
+    const ads = []
+    for (let j = 0; j < 3 && adPool.length; j++) {
+      ads.push(adPool.splice(Math.floor(rand(0, adPool.length)), 1)[0])
+    }
+    buildings.push({
+      i,
+      x: i * bw + 3,
+      w: bw - 6,
+      h: rand(90, 210),
+      color: NEON[i % NEON.length],
+      ads: ads.length ? ads : [ADS[i % ADS.length]],
+    })
+  }
   return {
     alt: START_ALT,
     vy: START_VY,
@@ -87,6 +126,7 @@ function newState() {
     beatFlash: 0,      // ms do flash de acerto
     boom: 0,           // raio da explosão (crash)
     pad: { cx: padCx, w: PAD_W },
+    buildings,
     craters, stars,
   }
 }
@@ -171,6 +211,68 @@ function update(dt, s) {
   }
 }
 
+// ---- Times Square: prédios com outdoors neon piscando ----
+function drawCity(s) {
+  const gy = GROUND_Y
+  // garland de lâmpadas piscando cruzando o céu
+  ctx.save()
+  for (let i = 0; i <= 24; i++) {
+    const gx = (i / 24) * W
+    const gyy = 26 + Math.sin(i * 0.9) * 10
+    const on = (Math.floor(s.clock / 180) + i) % 2 === 0
+    ctx.fillStyle = on ? NEON[i % NEON.length] : '#2a2142'
+    ctx.fillRect(gx - 1, gyy - 1, 3, 3)
+  }
+  ctx.restore()
+
+  ctx.textAlign = 'center'
+  for (const b of s.buildings) {
+    const top = gy - b.h
+    // prédio
+    ctx.fillStyle = '#150f28'
+    ctx.fillRect(b.x, top, b.w, b.h)
+    ctx.strokeStyle = '#2a2142'
+    ctx.lineWidth = 1
+    ctx.strokeRect(b.x + 0.5, top + 0.5, b.w - 1, b.h - 1)
+
+    // janelinhas acesas (fileiras)
+    for (let wy = top + 44; wy < gy - 6; wy += 12) {
+      for (let wx = b.x + 5; wx < b.x + b.w - 5; wx += 10) {
+        const lit = (Math.floor(s.clock / 400) + wx + wy) % 3 === 0
+        ctx.fillStyle = lit ? '#ffe27a' : '#241b3a'
+        ctx.fillRect(wx, wy, 4, 5)
+      }
+    }
+
+    // telão / outdoor
+    const scrX = b.x + 5, scrY = top + 6
+    const scrW = b.w - 10, scrH = Math.min(58, b.h * 0.42)
+    ctx.fillStyle = '#04040a'
+    ctx.fillRect(scrX, scrY, scrW, scrH)
+    // moldura neon
+    ctx.strokeStyle = b.color
+    ctx.lineWidth = 2
+    ctx.strokeRect(scrX + 1, scrY + 1, scrW - 2, scrH - 2)
+    // lâmpadas correndo na moldura (marquee)
+    for (let m = 0; m < scrW; m += 8) {
+      const on = (Math.floor(s.clock / 120) + m) % 2 === 0
+      ctx.fillStyle = on ? '#ffe27a' : '#3a2a6a'
+      ctx.fillRect(scrX + m, scrY - 2, 3, 3)
+      ctx.fillRect(scrX + m, scrY + scrH - 1, 3, 3)
+    }
+    // texto da propaganda (troca sozinho = cafona)
+    const ad = b.ads[Math.floor(s.clock / 1500 + b.i) % b.ads.length]
+    ctx.fillStyle = b.color
+    ctx.font = 'bold 8px "Press Start 2P", monospace'
+    const lh = 11
+    const ty = scrY + scrH / 2 - ((ad.length - 1) * lh) / 2 + 3
+    for (let li = 0; li < ad.length; li++) {
+      ctx.fillText(ad[li], scrX + scrW / 2, ty + li * lh)
+    }
+  }
+  ctx.textAlign = 'start'
+}
+
 // ---- Medidor vertical de velocidade (direita) ----
 const METER = { x: W - 52, y: 60, w: 26, h: H - 190 }
 function vyToY(vy) {
@@ -217,6 +319,9 @@ function draw(s) {
   for (const c of s.craters) {
     ctx.beginPath(); ctx.arc(c.x, groundY + 18, c.r, Math.PI, 0); ctx.fill()
   }
+
+  // Times Square: skyline de outdoors neon (atrás da nave/plataforma)
+  drawCity(s)
 
   // plataforma de pouso
   const pad = s.pad
