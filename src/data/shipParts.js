@@ -24,8 +24,8 @@ export const SHIP_PARTS = {
   ],
   weapon: [
     { id: 'cannon', name: 'Canhão', desc: 'Tiro único, dano padrão', bulletW: 4, bulletH: 12, bulletColor: '#ffe14d', fireCd: 200, damage: 1 },
-    { id: 'rapid', name: 'Metralhadora', desc: 'Rajadas rápidas', bulletW: 3, bulletH: 8, bulletColor: '#fff59d', fireCd: 110, damage: 0.6 },
-    { id: 'plasma', name: 'Plasma', desc: 'Projéteis largos e lentos', bulletW: 7, bulletH: 16, bulletColor: '#c084fc', fireCd: 380, damage: 2.2 },
+    { id: 'rapid', name: 'Metralhadora', desc: 'Rajadas rápidas, dois canos', bulletW: 3, bulletH: 8, bulletColor: '#fff59d', fireCd: 110, damage: 0.6, lockedBy: 'rich-landing' },
+    { id: 'plasma', name: 'Plasma', desc: 'Segure para carregar: feixe perfurante, recarga = 2x a carga', bulletW: 7, bulletH: 16, bulletColor: '#c084fc', fireCd: 380, damage: 2.2, lockedBy: 'high-score' },
   ],
 }
 
@@ -40,6 +40,7 @@ export const BODY_TRACKS = [
     max: 5,
     fuelPerLevel: 20,
     cost: (lvl) => 3 + lvl * 2,
+    lockedBy: 'fuel-destroyer',
   },
   {
     key: 'shield',
@@ -47,6 +48,7 @@ export const BODY_TRACKS = [
     desc: 'Anula 1 impacto por nível',
     max: 3,
     cost: (lvl) => 6 + lvl * 4,
+    lockedBy: 'ten-deaths',
   },
   {
     key: 'save',
@@ -54,6 +56,7 @@ export const BODY_TRACKS = [
     desc: '-5% de perda de moedas ao morrer',
     max: 10,
     cost: (lvl) => 4 + lvl * 2,
+    lockedBy: 'coin-loser',
   },
 ]
 
@@ -127,6 +130,7 @@ export function buildShipStats(loadout) {
     maxSpeedMul: p.engine.maxSpeed + engineUp.speed * ENGINE_SPEED_PER_LEVEL,
     accelMul: p.engine.accelMul ?? 1,
     cruiseMul: p.engine.cruiseMul ?? 1,
+    weaponId: p.weapon.id,
     fireCd: p.weapon.fireCd,
     damage: p.weapon.damage,
     coinMul: p.nose.coinMul ?? 1,

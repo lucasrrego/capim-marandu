@@ -72,6 +72,23 @@ export function playSparkle() {
   playBlip({ notes: [72, 76, 79, 84, 88], type: 'triangle', gain: 0.3, step: 0.05, dur: 0.16 })
 }
 
+// ---- SFX do minigame da abdução -----------------------------------------
+
+/** Garra descendo (nota grave curta). */
+export function playClaw() {
+  playBlip({ notes: [45], type: 'square', gain: 0.16, dur: 0.1 })
+}
+
+/** Abduziu um jogador (arpejo dourado subindo). */
+export function playAbduct() {
+  playBlip({ notes: [72, 76, 79, 84], type: 'square', gain: 0.3, step: 0.05, dur: 0.14 })
+}
+
+/** Craque se jogou no chão pra escapar (whoosh descendo). */
+export function playDodge() {
+  playBlip({ notes: [72, 60], type: 'triangle', gain: 0.26, step: 0.05, dur: 0.12 })
+}
+
 // ---- Trilha (mesma melodia da intro) ------------------------------------
 
 const LEAD = [

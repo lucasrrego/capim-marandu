@@ -3,17 +3,23 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
+import AbductionGame from './AbductionGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
+import AchievementsScreen from './AchievementsScreen.vue'
+import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
+import { unlock as unlockAchievement } from '../data/achievements.js'
+import { slotKey, setSlot } from '../data/saves.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'over' | 'won'
-const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
+const phase = ref('start')           // 'start' | 'intro' | 'saves' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'achievements' | 'over' | 'won'
+const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
+let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
 const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
@@ -69,10 +75,15 @@ const RESPAWN_DELAY = 1000           // ms de explosão antes de renascer
 const SHIELD_INVULN = 900            // ms de invuln ao absorver 1 impacto no escudo
 const GOLD_DUR = 450                 // ms de brilho dourado ao pegar combustível
 
-// ---- Economia (moedas persistidas entre partidas) ----
-const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
-const BODY_KEY = 'capim-marandu:body'     // níveis de upgrade do corpo (persistem)
-const ENGINE_KEY = 'capim-marandu:engine' // níveis de upgrade do motor (persistem)
+// ---- Plasma carregável (feixe perfurante) ----
+const PLASMA_MIN_CHARGE = 150        // ms mínimos de carga para disparar
+const PLASMA_MAX_CHARGE = 1600       // ms de carga máxima
+const PLASMA_MIN_W = 10              // largura do feixe na carga mínima
+const PLASMA_MAX_W = 64              // largura do feixe na carga máxima
+const PLASMA_LEN = 260               // comprimento do feixe (px)
+
+// ---- Economia (persistida por slot de save; ver saves.js → slotKey) ----
+// Todo progresso é gravado em capim-marandu:s<N>:<nome>, com N = slot ativo.
 // Recompensa de moedas por tipo destruído. Para novos vilões, basta
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
@@ -97,27 +108,75 @@ const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
 
+// contadores acumulados, persistidos no slot ativo
+let lostTotal = 0      // moedas perdidas acumuladas
+let deathsTotal = 0    // corridas perdidas acumuladas
+let abductTotal = 0    // jogadores abduzidos acumulados
+let landTotal = 0      // pousos na Lua acumulados
+let installsTotal = 0  // modificações/melhorias instaladas no hangar
+let spentTotal = 0     // moedas gastas no total
+
 function loadBank() {
-  bank.value = Number(localStorage.getItem(COINS_KEY)) || 0
+  bank.value = Number(localStorage.getItem(slotKey('coins'))) || 0
+  lostTotal = Number(localStorage.getItem(slotKey('lost'))) || 0
+  deathsTotal = Number(localStorage.getItem(slotKey('deaths'))) || 0
+  abductTotal = Number(localStorage.getItem(slotKey('abduct'))) || 0
+  landTotal = Number(localStorage.getItem(slotKey('land'))) || 0
+  installsTotal = Number(localStorage.getItem(slotKey('installs'))) || 0
+  spentTotal = Number(localStorage.getItem(slotKey('spent'))) || 0
+}
+
+// instalou peça/melhoria no hangar (custo em moedas) → conquistas
+function onInstall(cost) {
+  installsTotal += 1
+  localStorage.setItem(slotKey('installs'), String(installsTotal))
+  if (installsTotal >= 1) unlockAchievement('first-mod')
+  if (installsTotal >= 5) unlockAchievement('five-upgrades')
+  if (installsTotal >= 10) unlockAchievement('ten-upgrades')
+  spentTotal += cost
+  localStorage.setItem(slotKey('spent'), String(spentTotal))
+  if (spentTotal >= 5937) unlockAchievement('big-spender')
+}
+
+// abduziu um jogador no minigame → conquistas (team 'star' = NeySea)
+function onAbduct(team) {
+  abductTotal += 1
+  localStorage.setItem(slotKey('abduct'), String(abductTotal))
+  if (abductTotal >= 10) unlockAchievement('abductor')
+  if (team === 'star') unlockAchievement('abduct-neysea')
+}
+
+// perdeu a corrida (game over) → conta p/ conquista Teimoso
+function tallyLoss() {
+  deathsTotal += 1
+  localStorage.setItem(slotKey('deaths'), String(deathsTotal))
+  if (deathsTotal >= 10) unlockAchievement('ten-deaths')
 }
 
 // fecha a corrida: guarda `fraction` do que ganhou (1 = vitória, 0.25 = morte)
 function settleRun(fraction) {
   runKept.value = Math.floor(runCoins.value * fraction)
   bank.value += runKept.value
-  localStorage.setItem(COINS_KEY, String(bank.value))
+  localStorage.setItem(slotKey('coins'), String(bank.value))
+  // acumula moedas perdidas entre corridas → conquista Buraco Negro
+  const lost = runCoins.value - runKept.value
+  if (lost > 0) {
+    lostTotal += lost
+    localStorage.setItem(slotKey('lost'), String(lostTotal))
+    if (lostTotal >= 1000) unlockAchievement('coin-loser')
+  }
 }
 
 // bônus avulso direto no banco (ex.: recompensa do pouso na Lua)
 function addCoins(n) {
   bank.value += n
-  localStorage.setItem(COINS_KEY, String(bank.value))
+  localStorage.setItem(slotKey('coins'), String(bank.value))
 }
 
-// carrega níveis salvos de uma trilha de upgrade em loadout[field]
-function loadUpgrade(key, field) {
+// carrega níveis salvos de uma trilha de upgrade (nome → loadout[field])
+function loadUpgrade(name, field) {
   try {
-    const saved = JSON.parse(localStorage.getItem(key) || 'null')
+    const saved = JSON.parse(localStorage.getItem(slotKey(name)) || 'null')
     if (saved && typeof saved === 'object') {
       hangarLoadout.value = {
         ...hangarLoadout.value,
@@ -128,14 +187,14 @@ function loadUpgrade(key, field) {
 }
 
 function loadUpgrades() {
-  loadUpgrade(BODY_KEY, 'body')
-  loadUpgrade(ENGINE_KEY, 'engineUp')
+  loadUpgrade('body', 'body')
+  loadUpgrade('engine', 'engineUp')
 }
 
-// persiste banco (gasto no hangar) e níveis de upgrade comprados
-watch(bank, (v) => localStorage.setItem(COINS_KEY, String(v)))
-watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(BODY_KEY, JSON.stringify(b)), { deep: true })
-watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(ENGINE_KEY, JSON.stringify(e)), { deep: true })
+// persiste banco (gasto no hangar) e níveis de upgrade comprados no slot ativo
+watch(bank, (v) => localStorage.setItem(slotKey('coins'), String(v)))
+watch(() => hangarLoadout.value.body, (b) => localStorage.setItem(slotKey('body'), JSON.stringify(b)), { deep: true })
+watch(() => hangarLoadout.value.engineUp, (e) => localStorage.setItem(slotKey('engine'), JSON.stringify(e)), { deep: true })
 
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
@@ -219,8 +278,13 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
+    abductionSegment: Math.floor(rand(1, 6)),   // qual warp (1..5) vira o minigame da abdução
     coinAcc: 0,
     runCoins: 0,
+    fuelKills: 0,
+    charging: false,
+    chargeStart: 0,
+    plasmaCd: 0,
     moonActive: false,   // percurso concluído → Lua desce no topo
     moon: null,          // { x, y, r, warp:{x,y,w,h,alive} }
   }
@@ -295,18 +359,63 @@ function spawnEnemy(s) {
   s.enemies.push({ type, x, y: -h - 4, w, h, vx, spin, rot: 0, alive: true })
 }
 
-function fire(s) {
-  const cd = shipStats.fireCd
-  if (s.time - s.lastFire < cd) return
-  s.lastFire = s.time
+function spawnBullet(s, cx) {
   const p = s.player
   s.bullets.push({
-    x: p.x + p.w / 2 - shipStats.bulletW / 2,
+    x: cx - shipStats.bulletW / 2,
     y: p.y - 4,
     w: shipStats.bulletW,
     h: shipStats.bulletH,
     damage: shipStats.damage,
   })
+}
+
+function fire(s) {
+  const cd = shipStats.fireCd
+  if (s.time - s.lastFire < cd) return
+  s.lastFire = s.time
+  const p = s.player
+  const cx = p.x + p.w / 2
+  if (shipStats.weaponId === 'rapid') {
+    // metralhadora: dois canos separados horizontalmente
+    const off = p.w * 0.45
+    spawnBullet(s, cx - off)
+    spawnBullet(s, cx + off)
+  } else {
+    spawnBullet(s, cx)
+  }
+}
+
+// largura do feixe conforme a carga acumulada
+function plasmaWidth(charge) {
+  const r = Math.min(charge, PLASMA_MAX_CHARGE) / PLASMA_MAX_CHARGE
+  return PLASMA_MIN_W + (PLASMA_MAX_W - PLASMA_MIN_W) * r
+}
+
+function startCharge(s) {
+  if (shipStats.weaponId !== 'plasma') return
+  if (s.plasmaCd > 0 || s.charging) return
+  s.charging = true
+  s.chargeStart = s.time
+}
+
+// solta o feixe: perfura tudo, e a recarga = 2x o tempo carregado
+function releaseFire(s) {
+  if (!s.charging) return
+  s.charging = false
+  const charge = Math.min(s.time - s.chargeStart, PLASMA_MAX_CHARGE)
+  if (charge < PLASMA_MIN_CHARGE) return   // carga curta demais: cancela sem cooldown
+  const p = s.player
+  const w = plasmaWidth(charge)
+  s.bullets.push({
+    x: p.x + p.w / 2 - w / 2,
+    y: p.y - PLASMA_LEN,
+    w, h: PLASMA_LEN,
+    damage: shipStats.damage,
+    pierce: true,
+    beam: true,
+  })
+  s.plasmaCd = charge * 2
 }
 
 function hit(a, b) {
@@ -386,7 +495,7 @@ function update(dt, s) {
     s.respawn -= dt * 1000
     if (s.respawn <= 0) {
       s.respawn = 0
-      if (s.lives <= 0) { s.over = true; settleRun(shipStats.deathKeep); phase.value = 'over' }
+      if (s.lives <= 0) { s.over = true; settleRun(shipStats.deathKeep); tallyLoss(); phase.value = 'over' }
       else respawnPlayer(s)
     }
     return
@@ -449,6 +558,7 @@ function update(dt, s) {
   s.fuel -= (5 * (s.speed / BASE_SPEED) * shipStats.fuelUse) * dt
   if (s.invuln > 0) s.invuln -= dt * 1000
   if (s.goldFlash > 0) s.goldFlash -= dt * 1000
+  if (s.plasmaCd > 0) s.plasmaCd -= dt * 1000
 
   // tiros
   for (const b of s.bullets) b.y -= 520 * dt
@@ -479,7 +589,11 @@ function update(dt, s) {
     for (const e of s.enemies) {
       if (e.alive && hit(b, e)) {
         e.alive = false
-        b.y = -999
+        if (!b.pierce) b.y = -999       // feixe de plasma atravessa e limpa o caminho
+        if (e.type === 'fuel') {
+          s.fuelKills++                 // destruir 10 tanques numa corrida → conquista
+          if (s.fuelKills >= 10) unlockAchievement('fuel-destroyer')
+        }
         s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
         s.coinAcc += (COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD) * shipStats.coinMul
         const coinPayout = Math.floor(s.coinAcc)
@@ -771,8 +885,19 @@ function draw(s) {
 
   // tiros
   for (const b of s.bullets) {
-    ctx.fillStyle = shipStats.bulletColor
-    ctx.fillRect(b.x, b.y, b.w, b.h)
+    if (b.beam) {
+      ctx.save()
+      ctx.shadowColor = shipStats.bulletColor
+      ctx.shadowBlur = 16
+      ctx.fillStyle = shipStats.bulletColor
+      ctx.fillRect(b.x, b.y, b.w, b.h)
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'   // núcleo branco
+      ctx.fillRect(b.x + b.w * 0.32, b.y, b.w * 0.36, b.h)
+      ctx.restore()
+    } else {
+      ctx.fillStyle = shipStats.bulletColor
+      ctx.fillRect(b.x, b.y, b.w, b.h)
+    }
   }
 
   // jogador (foguete montado) — some durante a explosão
@@ -787,6 +912,22 @@ function draw(s) {
     }
     drawShip(ctx, p.x, p.y, p.w, p.h, shipLoadout, s.time, { goldTint: gi })
     if (gi > 0) ctx.restore()
+
+    // orbe de carga do plasma no bico
+    if (s.charging) {
+      const charge = Math.min(s.time - s.chargeStart, PLASMA_MAX_CHARGE)
+      const rad = Math.max(3, plasmaWidth(charge) / 2)
+      ctx.save()
+      ctx.shadowColor = shipStats.bulletColor
+      ctx.shadowBlur = 14
+      ctx.globalAlpha = 0.45 + 0.55 * (charge / PLASMA_MAX_CHARGE)
+      ctx.fillStyle = shipStats.bulletColor
+      ctx.beginPath()
+      ctx.arc(p.x + p.w / 2, p.y - 2, rad, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+      ctx.globalAlpha = 1
+    }
   }
 
   // partículas de explosão
@@ -816,18 +957,49 @@ function frame(ts) {
 }
 
 // ---- Controles ----
+function enterSaves() {
+  phase.value = 'saves'
+}
+
+// escolheu um slot: ativa, carrega o progresso dele e vai pro hangar
+function chooseSave(n) {
+  setSlot(n)
+  loadBank()
+  loadUpgrades()
+  enterHangar()
+}
+
 function enterHangar() {
   phase.value = 'hangar'
 }
 
-function enterMoon() {
+let moonFromStart = false   // true = teste pela tela inicial; false = pouso real da corrida
+
+function enterMoon(fromStart = false) {
+  moonFromStart = fromStart === true
   fuelPct.value = 100
   speedLabel.value = '0'
   phase.value = 'moon'
 }
 
+// sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
+function leaveMoon() {
+  phase.value = moonFromStart ? 'start' : 'hangar'
+}
+
 function playIntro() {
   phase.value = 'intro'
+}
+
+// pousou na Lua = concluiu o jogo → conquistas
+// (o @reward do pouso já somou no banco antes deste handler)
+function onLanded() {
+  unlockAchievement('first-landing')
+  if (bank.value > 300) unlockAchievement('rich-landing')
+  if (score.value > 2000) unlockAchievement('high-score')
+  landTotal += 1
+  localStorage.setItem(slotKey('land'), String(landTotal))
+  if (landTotal >= 10) unlockAchievement('ten-landings')
 }
 
 function startGame(loadout) {
@@ -860,13 +1032,44 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  activeMinigame.value = { segment: warp.segment, color: warp.color }
+  const game = warp.segment === state.abductionSegment ? 'abduction' : 'placeholder'
+  minigameFromStart = false
+  activeMinigame.value = { segment: warp.segment, color: warp.color, game }
+  phase.value = 'minigame'
+}
+
+// Acesso direto pela tela inicial (sem precisar colidir com o warp).
+function openAbduction() {
+  minigameFromStart = true
+  activeMinigame.value = { segment: 1, color: '#37e0a0', game: 'abduction' }
   phase.value = 'minigame'
 }
 
 function exitMinigame() {
   phase.value = 'playing'
   last = 0
+}
+
+// Volta do minigame: pra tela inicial se veio de lá, senão retoma o percurso.
+function leaveMinigame() {
+  if (minigameFromStart) {
+    minigameFromStart = false
+    phase.value = 'start'
+  } else {
+    exitMinigame()
+  }
+}
+
+// Recompensa do minigame: durante a corrida vai pras moedas da corrida
+// (settleRun aplica a fração no fim); fora da corrida, direto no banco.
+function earnMinigame(n) {
+  if (!n) return
+  if (minigameFromStart || !state) {
+    addCoins(n)
+  } else {
+    state.runCoins += n
+    runCoins.value = state.runCoins
+  }
 }
 
 function onKey(e, down) {
@@ -876,17 +1079,19 @@ function onKey(e, down) {
   if (k === 'arrowright' || k === 'd') keys.right = down
   if (k === 'arrowup' || k === 'w') keys.up = down
   if (k === 'arrowdown' || k === 's') keys.down = down
-  if (k === ' ' && down && phase.value === 'playing') fire(state)
+  if (k === ' ' && phase.value === 'playing') {
+    if (shipStats.weaponId === 'plasma') {
+      if (down) startCharge(state); else releaseFire(state)
+    } else if (down) fire(state)
+  }
   if (k === 'p' && down) togglePause()
   if (k === 'enter' && down) {
     if (phase.value === 'start') playIntro()
     else if (phase.value === 'over') enterHangar()
     else if (phase.value === 'hangar') startGame()
   }
-  if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
-  // TODO: disparar 'moon' pela condição de vitória do River Raid (altitude/distância).
-  // Por ora acessível pra teste isolado via botão no start ou tecla M.
-  if (k === 'm' && down && (phase.value === 'start' || phase.value === 'over')) enterMoon()
+  if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements' || phase.value === 'saves')) phase.value = 'start'
+  if (k === 'escape' && down && (phase.value === 'playing' || phase.value === 'paused')) togglePause()
 }
 
 const kd = (e) => onKey(e, true)
@@ -894,14 +1099,26 @@ const ku = (e) => onKey(e, false)
 
 // botões touch
 function press(dir, v) {
-  if (dir === 'fire') { if (v && phase.value === 'playing') fire(state); return }
+  if (dir === 'fire') {
+    if (v && phase.value === 'playing' && shipStats.weaponId !== 'plasma') fire(state)
+    return
+  }
   keys[dir] = v
 }
 
 let fireHold = null
 function holdFire(v) {
+  if (phase.value !== 'playing') {
+    if (!v && fireHold) { clearInterval(fireHold); fireHold = null }
+    return
+  }
+  // plasma: segurar carrega, soltar dispara o feixe
+  if (shipStats.weaponId === 'plasma') {
+    if (v) startCharge(state); else releaseFire(state)
+    return
+  }
   if (v) {
-    if (phase.value === 'playing') fire(state)
+    fire(state)
     fireHold = setInterval(() => { if (phase.value === 'playing') fire(state) }, shipStats.fireCd)
   } else if (fireHold) { clearInterval(fireHold); fireHold = null }
 }
@@ -933,18 +1150,38 @@ onUnmounted(() => {
           :width="W"
           :height="H"
           @reward="addCoins"
+          @landed="onLanded"
           @fuel="fuelPct = $event"
           @speed="speedLabel = $event"
-          @exit="phase = 'start'"
+          @exit="leaveMoon"
         />
 
         <template v-else>
         <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-        <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
+        <IntroScreen v-if="phase === 'intro'" @done="enterSaves" />
 
-        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" />
-        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
+        <StartScreen
+          v-else-if="phase === 'start'"
+          class="rr-hangar"
+          @play="playIntro"
+          @achievements="phase = 'achievements'"
+          @minigame="openAbduction"
+        />
+        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
+
+        <SaveScreen
+          v-else-if="phase === 'saves'"
+          class="rr-hangar"
+          @select="chooseSave"
+          @back="phase = 'start'"
+        />
+
+        <AchievementsScreen
+          v-else-if="phase === 'achievements'"
+          class="rr-hangar"
+          @back="phase = 'start'"
+        />
 
         <HangarScreen
           v-else-if="phase === 'hangar'"
@@ -952,15 +1189,20 @@ onUnmounted(() => {
           v-model:coins="bank"
           class="rr-hangar"
           @launch="startGame"
+          @install="onInstall"
           @back="phase = 'start'"
         />
 
-        <MinigameScreen
+        <component
+          :is="activeMinigame.game === 'abduction' ? AbductionGame : MinigameScreen"
           v-else-if="phase === 'minigame'"
           class="rr-hangar"
           :segment="activeMinigame.segment"
           :color="activeMinigame.color"
-          @back="exitMinigame"
+          :loadout="hangarLoadout"
+          @earn="earnMinigame"
+          @abduct="onAbduct"
+          @back="leaveMinigame"
         />
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">

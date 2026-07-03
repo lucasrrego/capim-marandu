@@ -16,7 +16,7 @@ const props = defineProps({
   width: { type: Number, default: 480 },
   height: { type: Number, default: 640 },
 })
-const emit = defineEmits(['exit', 'reward', 'fuel', 'speed'])
+const emit = defineEmits(['exit', 'reward', 'fuel', 'speed', 'landed'])
 
 const W = props.width
 const H = props.height
@@ -181,6 +181,7 @@ function touchdown(s) {
     result.value = { coins }
     stage.value = 'landed'
     emit('reward', coins)
+    emit('landed')
   } else {
     result.value = {
       reason: !onPad ? 'Pousou fora da plataforma.'
