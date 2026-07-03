@@ -59,7 +59,8 @@ const ADS = [
   { logo: 'dg' },                                                                // Dolce & Gabbana
   { logo: 'capim' },
   { text: ['SEU AD', 'AQUI'] },
-
+  { text: ['LUA by', 'ELON'] },
+  { text: ['COMPRE', 'DOGE'] }
 ]
 // Cores das janelas acesas
 const WINDOW_ON = ['#6cc6ff', '#37e0a0', '#ffe27a']
