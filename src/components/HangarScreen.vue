@@ -8,6 +8,7 @@ import {
   buildShipStats,
   drawShip,
 } from '../data/shipParts.js'
+import { playSelect, playConfirm, playSparkle } from '../audio/sfx.js'
 import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
@@ -50,6 +51,12 @@ const statRows = computed(() => [
   { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
 
+function pickCategory(key) {
+  if (key === activeCategory.value) return
+  activeCategory.value = key
+  playSelect()
+}
+
 const STATIC_COST = 30   // instalar uma peça (asa/bico/motor/arma) custa 30 moedas
 
 function selectPart(part) {
@@ -59,6 +66,7 @@ function selectPart(part) {
   coins.value -= STATIC_COST
   loadout.value = { ...loadout.value, [activeCategory.value]: part.id }
   emit('install', STATIC_COST)
+  playSelect()
 }
 
 function buyUpgrade(track) {
@@ -72,6 +80,7 @@ function buyUpgrade(track) {
   coins.value -= cost
   loadout.value = { ...loadout.value, [store]: { ...cur, [track.key]: lvl + 1 } }
   emit('install', cost)
+  playSparkle()   // upgrade comprado
 }
 
 function drawPreview(ts) {
@@ -106,7 +115,13 @@ function drawPreview(ts) {
 }
 
 function launch(short = false) {
+  playConfirm()
   emit('launch', { loadout: { ...loadout.value }, short })
+}
+
+function goBack() {
+  playSelect()
+  emit('back')
 }
 
 onMounted(() => {
@@ -143,7 +158,7 @@ onUnmounted(() => {
             v-for="cat in PART_CATEGORIES"
             :key="cat.key"
             :class="{ active: activeCategory === cat.key }"
-            @click="activeCategory = cat.key"
+            @click="pickCategory(cat.key)"
           >
             {{ cat.label }}
           </button>
@@ -218,7 +233,7 @@ onUnmounted(() => {
     </dl>
 
     <div class="hangar-actions">
-      <button class="hangar-btn secondary" @click="$emit('back')">← Voltar</button>
+      <button class="hangar-btn secondary" @click="goBack">← Voltar</button>
       <button class="hangar-btn primary" @click="launch(false)">🚀 Lançar</button>
     </div>
     <button class="hangar-devrun" @click="launch(true)">⚡ Corrida curta (teste)</button>
