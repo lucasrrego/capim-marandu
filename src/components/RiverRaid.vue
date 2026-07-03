@@ -247,10 +247,9 @@ function stepGen(g) {
 }
 
 function newState() {
-  // sorteia qual warp (1..5) vira cada minigame, sempre em warps diferentes
-  const abductionSegment = Math.floor(rand(1, 6))
-  let marioSegment = Math.floor(rand(1, 5))
-  if (marioSegment >= abductionSegment) marioSegment++
+  // cada warp vira um minigame de verdade; os tipos giram e repetem quando
+  // todos já foram jogados. Offset aleatório varia a ordem por corrida.
+  const minigameOffset = Math.floor(rand(0, MINIGAME_TYPES.length))
   const gen = makeGen()
   const rows = []
   // spawn começa com o canal aberto (paredes só nas bordas)
@@ -319,8 +318,7 @@ function newState() {
     nextWarpAt: SHORT_GOAL / (WARP_SEGMENTS + 1),
     warpSegment: 0,
     bossDone: false,                            // chefe na metade do percurso (uma vez)
-    abductionSegment,
-    marioSegment,
+    minigameOffset,
     coinAcc: 0,
     runCoins: 0,
     fuelKills: 0,
@@ -1152,9 +1150,9 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  const game = warp.segment === state.abductionSegment ? 'abduction'
-    : warp.segment === state.marioSegment ? 'mario'
-    : 'placeholder'
+  // gira pelos tipos de minigame; repete quando todos já foram jogados
+  const i = (warp.segment - 1 + state.minigameOffset) % MINIGAME_TYPES.length
+  const game = MINIGAME_TYPES[i]
   minigameFromStart = false
   activeMinigame.value = { segment: warp.segment, color: warp.color, game }
   phase.value = 'minigame'
@@ -1175,6 +1173,8 @@ function openMario() {
 
 // mapa nome → componente do minigame (tipos não mapeados caem no placeholder)
 const MINIGAMES = { abduction: AbductionGame, mario: MarioGame }
+// tipos jogáveis nos warps, na ordem em que giram (repetem quando esgotam)
+const MINIGAME_TYPES = Object.keys(MINIGAMES)
 
 // Menu de mini-games (a partir da tela inicial)
 function openMinigamesMenu() {
