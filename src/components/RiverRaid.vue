@@ -14,7 +14,7 @@ import MinigamesMenu from './MinigamesMenu.vue'
 import AchievementsScreen from './AchievementsScreen.vue'
 import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
-import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady, startGameMusic, stopMusic } from '../audio/sfx.js'
+import { playFuel, playExplosion, setThrust, playShot, startPlasmaCharge, stopPlasmaCharge, playPlasmaFire, playPlasmaReady, startGameMusic, stopMusic, playEndGame } from '../audio/sfx.js'
 import { drawSprite, SATELLITE, SPACE_JUNK } from '../data/pixelSprites.js'
 import { unlock as unlockAchievement } from '../data/achievements.js'
 import { slotKey, setSlot } from '../data/saves.js'
@@ -1074,13 +1074,25 @@ function onMoonCrash() {
   lives.value = 0
 }
 
-// sai da Lua: teste volta pra tela inicial; pouso real volta pro hangar (mesmo slot)
+// volta pro hangar com a máscara de transição (mesmo slot)
+function returnToHangar() {
+  playTransition('hangar', 'none')
+}
+
+// sai da Lua: teste volta pros minigames; pouso real volta pro hangar (com máscara)
 function leaveMoon() {
-  phase.value = moonFromStart ? 'minigames' : 'hangar'
+  if (moonFromStart) phase.value = 'minigames'
+  else returnToHangar()
 }
 
 function playIntro() {
   phase.value = 'intro'
+}
+
+// fim do jogo (vitória): tela de vitória + música triunfante
+function onGameWon() {
+  phase.value = 'won'
+  playEndGame()
 }
 
 // pousou na Lua = concluiu o jogo → cut scene final (plot twist) → conquistas/vitória
@@ -1249,7 +1261,7 @@ function onKey(e, down) {
   if (k === 'p' && down) togglePause()
   if (k === 'enter' && down) {
     if (phase.value === 'start') playIntro()
-    else if (phase.value === 'over') enterHangar()
+    else if (phase.value === 'over' || phase.value === 'won') returnToHangar()
     else if (phase.value === 'hangar') startGame()
   }
   if (k === 'escape' && down && (phase.value === 'hangar' || phase.value === 'achievements' || phase.value === 'saves')) phase.value = 'start'
@@ -1330,7 +1342,7 @@ onUnmounted(() => {
 
         <MoonApproach v-else-if="phase === 'approach'" @done="phase = 'moon'" />
 
-        <FinalCutscene v-else-if="phase === 'ending'" @done="phase = 'won'" />
+        <FinalCutscene v-else-if="phase === 'ending'" @done="onGameWon" />
 
         <StartScreen
           v-else-if="phase === 'start'"
@@ -1406,7 +1418,7 @@ onUnmounted(() => {
           <p>Foi mal, pai... quase lá.</p>
           <p>Pontuação: <b>{{ score }}</b></p>
           <p class="rr-loot">🪙 {{ runCoins }} na corrida · guardou <b>{{ runKept }}</b> (perdeu {{ deathLossPct }}%)</p>
-          <button @click="enterHangar">↻ Jogar de novo</button>
+          <button @click="returnToHangar">↻ Jogar de novo</button>
         </div>
 
         <div v-else-if="phase === 'won'" class="rr-overlay">
@@ -1415,7 +1427,7 @@ onUnmounted(() => {
           <p><i>"Busquem conhecimento." — ET Bilu</i></p>
           <p>Pontuação: <b>{{ score }}</b></p>
           <p class="rr-loot">🪙 guardou <b>{{ runKept }}</b> no banco</p>
-          <button @click="enterHangar">↻ Jogar de novo</button>
+          <button @click="returnToHangar">↻ Jogar de novo</button>
         </div>
 
         <div

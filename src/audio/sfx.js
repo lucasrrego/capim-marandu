@@ -150,6 +150,29 @@ export function playWrench() {
 }
 
 /**
+ * Fanfarra de fim de jogo (vitória na Lua): melodia triunfante em duas frases
+ * sobre um baixo em acordes. Toca uma vez ao concluir o jogo.
+ */
+export function playEndGame() {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const t = c.currentTime + 0.001
+  // melodia principal (ta-ta-ta-taa ... subindo pro agudo sustentado)
+  const mel = [
+    [76, 0.00, 0.12], [76, 0.15, 0.12], [76, 0.30, 0.12],
+    [72, 0.46, 0.20], [79, 0.72, 0.22],
+    [76, 1.00, 0.14], [79, 1.18, 0.14], [84, 1.38, 0.55],
+  ]
+  mel.forEach(([n, dt, dur]) => tone(midiToFreq(n), t + dt, dur, 'square', 0.3))
+  // brilho uma oitava acima no acorde final
+  tone(midiToFreq(88), t + 1.38, 0.55, 'triangle', 0.18)
+  // baixo em acordes (I – IV – V – I)
+  const bass = [48, 53, 55, 48]
+  bass.forEach((n, i) => tone(midiToFreq(n), t + i * 0.46, 0.44, 'triangle', 0.24))
+}
+
+/**
  * Sting de início de batalha (estilo Pokémon): alarme urgente + corrida
  * ascendente sobre um baixo pulsante. Toca durante a máscara de transição.
  */
