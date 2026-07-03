@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
+import MinigameScreen from './MinigameScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -8,7 +9,8 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'over'
+const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'over'
+const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
 const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
@@ -41,6 +43,13 @@ const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
 const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
 const DEFAULT_COIN_REWARD = 1
+
+// ---- Warps de mini game (1 a cada 1/5 do percurso) ----
+const RUN_LENGTH = 1500              // reduzido para teste (warp a cada ~300 px)
+const WARP_INTERVAL = RUN_LENGTH / 5
+const WARP_COLORS = ['#ff4d4d', '#ffd24d', '#37e0a0', '#9b7bff', '#ff8a1a']
+const WARP_W = 32
+const WARP_H = 40
 
 const keys = {}
 
@@ -131,7 +140,29 @@ function newState() {
     particles: [],
     over: false,
     time: 0,
+    warps: [],
+    nextWarpAt: WARP_INTERVAL,
+    warpSegment: 0,
   }
+}
+
+function spawnWarp(s) {
+  if (s.warpSegment >= 5) return
+  const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
+  const segment = s.warpSegment + 1
+  const color = WARP_COLORS[s.warpSegment]
+  const side = s.warpSegment % 2 === 0 ? 'left' : 'right'
+  const x = side === 'left'
+    ? top.left - WARP_W * 0.55
+    : top.right - WARP_W * 0.45
+  s.warps.push({
+    side, color, segment,
+    x, y: -WARP_H - 4,
+    w: WARP_W, h: WARP_H,
+    alive: true,
+  })
+  s.warpSegment++
+  s.nextWarpAt += WARP_INTERVAL
 }
 
 // margens interpoladas na altura y
@@ -255,6 +286,8 @@ function update(dt, s) {
   const move = s.speed * dt
   s.distance += move
 
+  while (s.distance >= s.nextWarpAt && s.warpSegment < 5) spawnWarp(s)
+
   // rolagem do terreno + reciclagem
   let minY = Infinity
   for (const r of s.rows) { r.y += move; if (r.y < minY) minY = r.y }
@@ -312,6 +345,10 @@ function update(dt, s) {
   }
   s.enemies = s.enemies.filter((e) => e.alive && e.y < H + 40)
 
+  // warps laterais
+  for (const w of s.warps) w.y += move
+  s.warps = s.warps.filter((w) => w.alive && w.y < H + 40)
+
   // tiros x inimigos
   for (const b of s.bullets) {
     for (const e of s.enemies) {
@@ -353,6 +390,16 @@ function update(dt, s) {
         e.alive = false
         killPlayer(s)
       }
+    }
+  }
+
+  // colisão com warp lateral → mini game
+  for (const w of s.warps) {
+    if (!w.alive) continue
+    if (hit(p, w)) {
+      w.alive = false
+      enterMinigame(w)
+      return
     }
   }
 
@@ -440,6 +487,38 @@ function draw(s) {
     ctx.fill()
   }
   ctx.globalAlpha = 1
+
+  // warps laterais (setas coloridas)
+  for (const w of s.warps) {
+    if (!w.alive) continue
+    const pulse = 0.7 + 0.3 * Math.sin(s.time / 200 + w.segment)
+    ctx.save()
+    ctx.shadowColor = w.color
+    ctx.shadowBlur = 10 + 8 * pulse
+    ctx.fillStyle = w.color
+    ctx.globalAlpha = 0.85 + 0.15 * pulse
+    ctx.beginPath()
+    if (w.side === 'left') {
+      ctx.moveTo(w.x, w.y + w.h / 2)
+      ctx.lineTo(w.x + w.w, w.y + 4)
+      ctx.lineTo(w.x + w.w, w.y + w.h - 4)
+    } else {
+      ctx.moveTo(w.x + w.w, w.y + w.h / 2)
+      ctx.lineTo(w.x, w.y + 4)
+      ctx.lineTo(w.x, w.y + w.h - 4)
+    }
+    ctx.closePath()
+    ctx.fill()
+    // anel do portal na lateral
+    ctx.globalAlpha = 0.5 + 0.3 * pulse
+    ctx.strokeStyle = w.color
+    ctx.lineWidth = 2
+    const cx = w.side === 'left' ? w.x + w.w * 0.35 : w.x + w.w * 0.65
+    ctx.beginPath()
+    ctx.arc(cx, w.y + w.h / 2, w.h * 0.38, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
 
   // inimigos
   for (const e of s.enemies) {
@@ -600,6 +679,16 @@ function togglePause() {
   else if (phase.value === 'paused') { phase.value = 'playing'; last = 0 }
 }
 
+function enterMinigame(warp) {
+  activeMinigame.value = { segment: warp.segment, color: warp.color }
+  phase.value = 'minigame'
+}
+
+function exitMinigame() {
+  phase.value = 'playing'
+  last = 0
+}
+
 function onKey(e, down) {
   const k = e.key.toLowerCase()
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(k)) e.preventDefault()
@@ -668,6 +757,14 @@ onUnmounted(() => {
           class="rr-hangar"
           @launch="startGame"
           @back="phase = 'start'"
+        />
+
+        <MinigameScreen
+          v-else-if="phase === 'minigame'"
+          class="rr-hangar"
+          :segment="activeMinigame.segment"
+          :color="activeMinigame.color"
+          @back="exitMinigame"
         />
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">
