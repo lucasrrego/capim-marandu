@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
+import MoonLanding from './MoonLanding.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
@@ -8,7 +9,7 @@ const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'over'
+const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'over' | 'moon'
 const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
@@ -568,6 +569,8 @@ function frame(ts) {
   if (dt > 0.05) dt = 0.05
 
   if (phase.value === 'playing') {
+    // canvas remonta ao voltar de fases que trocam a view (ex.: moon) → reobtém o ctx
+    if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
     update(dt, state)
     draw(state)
   }
@@ -577,6 +580,12 @@ function frame(ts) {
 // ---- Controles ----
 function enterHangar() {
   phase.value = 'hangar'
+}
+
+function enterMoon() {
+  fuelPct.value = 100
+  speedLabel.value = '0'
+  phase.value = 'moon'
 }
 
 function startGame(loadout) {
@@ -614,6 +623,9 @@ function onKey(e, down) {
     else if (phase.value === 'hangar') startGame()
   }
   if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
+  // TODO: disparar 'moon' pela condição de vitória do River Raid (altitude/distância).
+  // Por ora acessível pra teste isolado via botão no start ou tecla M.
+  if (k === 'm' && down && (phase.value === 'start' || phase.value === 'over')) enterMoon()
 }
 
 const kd = (e) => onKey(e, true)
@@ -653,6 +665,18 @@ onUnmounted(() => {
   <div class="rr">
     <div class="rr-main">
       <div class="rr-stage">
+        <MoonLanding
+          v-if="phase === 'moon'"
+          :loadout="hangarLoadout"
+          :width="W"
+          :height="H"
+          @reward="addCoins"
+          @fuel="fuelPct = $event"
+          @speed="speedLabel = $event"
+          @exit="phase = 'start'"
+        />
+
+        <template v-else>
         <canvas ref="canvas" :width="W" :height="H"></canvas>
 
         <div v-if="phase === 'start'" class="rr-overlay">
@@ -660,6 +684,7 @@ onUnmounted(() => {
           <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
           <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
           <button @click="enterHangar">▶ Jogar</button>
+          <button class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
         </div>
 
         <HangarScreen
@@ -680,6 +705,7 @@ onUnmounted(() => {
           <p>Pontuação: <b>{{ score }}</b></p>
           <button @click="enterHangar">↻ Jogar de novo</button>
         </div>
+        </template>
       </div>
 
       <aside class="rr-panel">
@@ -892,6 +918,14 @@ onUnmounted(() => {
   font-weight: bold;
   background: var(--accent, #aa3bff);
   color: #fff;
+}
+.rr-overlay button.rr-moon-btn {
+  padding: 8px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid rgba(155, 123, 255, 0.5);
+  color: #c9c1e6;
 }
 .rr-touch {
   display: flex;
