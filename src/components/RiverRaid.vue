@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import HangarScreen from './HangarScreen.vue'
 import MoonLanding from './MoonLanding.vue'
 import MinigameScreen from './MinigameScreen.vue'
+import AbductionGame from './AbductionGame.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
@@ -13,7 +14,8 @@ const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
 const phase = ref('start')           // 'start' | 'intro' | 'hangar' | 'playing' | 'paused' | 'minigame' | 'moon' | 'over' | 'won'
-const activeMinigame = ref({ segment: 1, color: '#ff4d4d' })
+const activeMinigame = ref({ segment: 1, color: '#ff4d4d', game: 'placeholder' })
+let minigameFromStart = false        // true quando o minigame foi aberto pela tela inicial
 const score = ref(0)
 const lives = ref(3)
 const shield = ref(0)
@@ -226,6 +228,7 @@ function newState() {
     warps: [],
     nextWarpAt: WARP_INTERVAL,
     warpSegment: 0,
+    abductionSegment: Math.floor(rand(1, 6)),   // qual warp (1..5) vira o minigame da abdução
     coinAcc: 0,
     runCoins: 0,
     charging: false,
@@ -943,13 +946,44 @@ function togglePause() {
 }
 
 function enterMinigame(warp) {
-  activeMinigame.value = { segment: warp.segment, color: warp.color }
+  const game = warp.segment === state.abductionSegment ? 'abduction' : 'placeholder'
+  minigameFromStart = false
+  activeMinigame.value = { segment: warp.segment, color: warp.color, game }
+  phase.value = 'minigame'
+}
+
+// Acesso direto pela tela inicial (sem precisar colidir com o warp).
+function openAbduction() {
+  minigameFromStart = true
+  activeMinigame.value = { segment: 1, color: '#37e0a0', game: 'abduction' }
   phase.value = 'minigame'
 }
 
 function exitMinigame() {
   phase.value = 'playing'
   last = 0
+}
+
+// Volta do minigame: pra tela inicial se veio de lá, senão retoma o percurso.
+function leaveMinigame() {
+  if (minigameFromStart) {
+    minigameFromStart = false
+    phase.value = 'start'
+  } else {
+    exitMinigame()
+  }
+}
+
+// Recompensa do minigame: durante a corrida vai pras moedas da corrida
+// (settleRun aplica a fração no fim); fora da corrida, direto no banco.
+function earnMinigame(n) {
+  if (!n) return
+  if (minigameFromStart || !state) {
+    addCoins(n)
+  } else {
+    state.runCoins += n
+    runCoins.value = state.runCoins
+  }
 }
 
 function onKey(e, down) {
@@ -1040,7 +1074,7 @@ onUnmounted(() => {
 
         <IntroScreen v-if="phase === 'intro'" @done="enterHangar" />
 
-        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" />
+        <StartScreen v-else-if="phase === 'start'" class="rr-hangar" @play="playIntro" @minigame="openAbduction" />
         <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon">🌙 Testar pouso na Lua</button>
 
         <HangarScreen
@@ -1052,12 +1086,15 @@ onUnmounted(() => {
           @back="phase = 'start'"
         />
 
-        <MinigameScreen
+        <component
+          :is="activeMinigame.game === 'abduction' ? AbductionGame : MinigameScreen"
           v-else-if="phase === 'minigame'"
           class="rr-hangar"
           :segment="activeMinigame.segment"
           :color="activeMinigame.color"
-          @back="exitMinigame"
+          :loadout="hangarLoadout"
+          @earn="earnMinigame"
+          @back="leaveMinigame"
         />
 
         <div v-else-if="phase === 'paused'" class="rr-overlay">

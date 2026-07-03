@@ -18,10 +18,16 @@ export const PALETTE = {
   r: '#d0392e',       // boca / lábios
   h: '#ff6ea8',       // coração (deslumbre)
   // acentos
-  y: '#ffd24d',       // ponta da antena / faísca
+  y: '#ffd24d',       // ponta da antena / faísca / camisa do Brasil
   o: '#ff8a1a',       // laranja
-  b: '#6cc6ff',       // azul (vidro)
+  b: '#6cc6ff',       // azul (vidro / lágrima)
   W: '#d5f0ff',       // azul claro
+  // pessoas (minigame da abdução)
+  s: '#e8b48c',       // pele
+  n: '#3a2418',       // cabelo / contorno escuro / chuteira
+  j: '#3a7bff',       // azul do Japão
+  J: '#1f4fd0',       // azul do Japão (sombra)
+  p: '#8e44ad',       // vestido roxo da Vó Baiana
 }
 
 /** Desenha um sprite (array de strings) no contexto 2D. */
@@ -114,3 +120,83 @@ export const GUGU = {
     '...ddd....ddd...',
   ],
 }
+
+// ---- Minigame "Abdução da Vó Baiana" (Brasil × Japão) -------------------
+// Jogadores de futebol: mesmo molde, muda camisa/calção. Grade 10 de largura.
+
+// Jogador do Brasil — camisa amarela (y), calção azul (j). Grade 8 (fininho).
+export const PLAYER_BR = [
+  '..nnnn..',
+  '.nssssn.',
+  '.ssssss.',
+  '.skssks.',
+  '.ssssss.',
+  '.yyyyyy.',
+  'yyyyyyyy',
+  'yyyyyyyy',
+  '.yyyyyy.',
+  '.jjjjjj.',
+  '.jj..jj.',
+  '.ss..ss.',
+  '.ss..ss.',
+  '.nn..nn.',
+]
+
+// Jogador do Japão — camisa azul (j), calção branco (w). Grade 8 (fininho).
+export const PLAYER_JP = [
+  '..nnnn..',
+  '.nssssn.',
+  '.ssssss.',
+  '.skssks.',
+  '.ssssss.',
+  '.jjjjjj.',
+  'jjjjjjjj',
+  'jjjjjjjj',
+  '.jjjjjj.',
+  '.wwwwww.',
+  '.ww..ww.',
+  '.ss..ss.',
+  '.ss..ss.',
+  '.nn..nn.',
+]
+
+// O craque do Brasil (jogador especial, vale mais) — estrela dourada na
+// cabeça, faixa e chuteiras douradas pra destacar dos demais. Grade 8.
+export const PLAYER_STAR = [
+  '...yy...',
+  '..nnnn..',
+  '.nyyyyn.',
+  '.ssssss.',
+  '.skssks.',
+  '.ssssss.',
+  '.yyyyyy.',
+  'yyyyyyyy',
+  'yyyyyyyy',
+  '.yyyyyy.',
+  '.jjjjjj.',
+  '.jj..jj.',
+  '.ss..ss.',
+  '.ss..ss.',
+  '.yy..yy.',
+]
+
+// Vó Baiana chorando — turbante rosa (h), pele (s), lágrimas (b),
+// boca aberta chorando (r/k), vestido roxo (p). Grade 16 de largura.
+export const VO_BAIANA = [
+  '....hhhhhhhh....',
+  '..hhhhhhhhhhhh..',
+  '..hhwwhhhhwwhh..',
+  '..hsssssssssh...',
+  '..hssssssssssh..',
+  '..ssksssssksss..',
+  '..sbssssssssbs..',
+  '..sssrrrrsssss..',
+  '..sssrkkrsssss..',
+  '...ssssssssss...',
+  '...pppppppppp...',
+  '..pppppppppppp..',
+  '.pppppppppppppp.',
+  '.pppwwwwwwwwppp.',
+  '.pppppppppppppp.',
+  '.pp.pppppppp.pp.',
+]
