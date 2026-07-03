@@ -1218,7 +1218,6 @@ onUnmounted(() => {
           v-else-if="phase === 'start'"
           class="rr-hangar"
           @play="playIntro"
-          @achievements="phase = 'achievements'"
           :dev="isDev"
           @minigame="openAbduction"
         />
@@ -1234,7 +1233,7 @@ onUnmounted(() => {
         <AchievementsScreen
           v-else-if="phase === 'achievements'"
           class="rr-hangar"
-          @back="phase = 'start'"
+          @back="phase = 'hangar'"
         />
 
         <HangarScreen
@@ -1244,6 +1243,7 @@ onUnmounted(() => {
           class="rr-hangar"
           @launch="startGame"
           @install="onInstall"
+          @achievements="phase = 'achievements'"
           @back="phase = 'start'"
         />
 

@@ -13,7 +13,7 @@ import { loadUnlocked, isUnlocked, ACHIEVEMENTS } from '../data/achievements.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
 const coins = defineModel('coins', { type: Number, default: 0 })
-const emit = defineEmits(['launch', 'back', 'install'])
+const emit = defineEmits(['launch', 'back', 'install', 'achievements'])
 
 const activeCategory = ref('wing')
 const previewCanvas = ref(null)
@@ -138,6 +138,7 @@ onUnmounted(() => {
     <div class="hangar-grid"></div>
 
     <header class="hangar-header">
+      <button class="hangar-ach-btn" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
       <span class="hangar-badge">CONSTRUTOR</span>
       <span class="hangar-coins">🪙 {{ coins }}</span>
       <h2>Monte sua nave</h2>
@@ -288,6 +289,24 @@ onUnmounted(() => {
   font-size: 1.3rem;
   color: #fff;
 }
+
+.hangar-ach-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--accent, #aa3bff);
+  border: 1px solid rgba(170, 59, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(170, 59, 255, 0.1);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.08s;
+}
+.hangar-ach-btn:hover { filter: brightness(1.2); }
+.hangar-ach-btn:active { transform: translateY(1px); }
 
 .hangar-coins {
   position: absolute;
