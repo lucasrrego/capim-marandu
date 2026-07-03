@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { DEFAULT_LOADOUT, drawShip } from '../data/shipParts.js'
+import { playExplosion, setThrust, playSuccess } from '../audio/sfx.js'
 
 // Clímax do jogo: pousar na Lua — só a DESCIDA.
 //  - Barra vertical verde (direita) = faixa de velocidade de descida segura; encolhe perto do chão.
@@ -88,15 +89,18 @@ function begin() {
 }
 
 function touchdown(s) {
+  setThrust(false)
   const { lo, hi } = safeBand(1)
   if (s.vy >= lo && s.vy <= hi) {
     const coins = 15
     result.value = { coins }
     stage.value = 'landed'
     emit('reward', coins)
+    playSuccess()
   } else {
     s.boom = 1
     stage.value = 'crashed'
+    playExplosion(1.7)
   }
 }
 
@@ -110,12 +114,14 @@ function update(dt, s) {
     // gravidade cresce na descida (peso)
     s.vy += (GRAVITY_BASE + GRAVITY_RAMP * progress(s)) * dt
     // freio contínuo ao segurar ↑
-    if (held.up && s.fuel > 0) {
+    const braking = held.up && s.fuel > 0
+    if (braking) {
       s.vy -= (BRAKE + (onBeat ? BRAKE_BONUS : 0)) * dt
       s.fuel = Math.max(0, s.fuel - FUEL_RATE * dt)
       s.flamePulse = 120
       if (onBeat) s.beatFlash = 120
     }
+    setThrust(braking)   // som de propulsão enquanto freia
     // mergulho ao segurar ↓
     if (held.down) s.vy += DIVE_RATE * dt
 
@@ -125,6 +131,7 @@ function update(dt, s) {
     emit('speed', String(Math.round(s.vy)))
     if (s.alt <= 0) { s.alt = 0; touchdown(s) }
   } else if (stage.value === 'crashed' && s.boom < 60) {
+    setThrust(false)
     s.boom += dt * 140
   }
 }
@@ -228,6 +235,7 @@ function onUp(e) {
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
   state = newState()
+  setThrust(false)   // limpa propulsão que possa vir ligada do jogo
   window.addEventListener('keydown', onDown)
   window.addEventListener('keyup', onUp)
   raf = requestAnimationFrame(frame)
@@ -237,6 +245,7 @@ onUnmounted(() => {
   cancelAnimationFrame(raf)
   window.removeEventListener('keydown', onDown)
   window.removeEventListener('keyup', onUp)
+  setThrust(false)
 })
 </script>
 

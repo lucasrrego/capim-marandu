@@ -6,6 +6,8 @@ import MinigameScreen from './MinigameScreen.vue'
 import IntroScreen from './IntroScreen.vue'
 import StartScreen from './StartScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
+import { playFuel, playExplosion, setThrust } from '../audio/sfx.js'
+import { drawSprite, SATELLITE, SPACE_JUNK } from '../data/pixelSprites.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
@@ -75,8 +77,18 @@ const BODY_KEY = 'capim-marandu:body'     // níveis de upgrade do corpo (persis
 const ENGINE_KEY = 'capim-marandu:engine' // níveis de upgrade do motor (persistem)
 // Recompensa de moedas por tipo destruído. Para novos vilões, basta
 // adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
-const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
+const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1, satellite: 2, junk: 1 }
 const DEFAULT_COIN_REWARD = 1
+
+// Pontos e tamanho (w, h) por tipo de objeto voador.
+const SCORE_BY_TYPE = { asteroid: 60, meteor: 90, fuel: 40, satellite: 80, junk: 55 }
+const ENEMY_SIZE = {
+  fuel: [26, 30],
+  asteroid: [40, 36],
+  meteor: [30, 28],
+  satellite: [45, 24],   // 15x8 do sprite * escala 3
+  junk: [30, 27],        // 10x9 do sprite * escala 3
+}
 
 // ---- Warps de mini game (1 a cada 1/5 do percurso) ----
 const RUN_LENGTH = 1500              // reduzido para teste (warp a cada ~300 px)
@@ -282,15 +294,17 @@ function spawnEnemy(s) {
   const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
   const roll = Math.random()
   let type
-  if (roll < 0.35) type = 'fuel'
-  else if (roll < 0.675) type = 'asteroid'
-  else type = 'meteor'
-  const w = type === 'fuel' ? 26 : type === 'asteroid' ? 40 : 30
-  const h = type === 'fuel' ? 30 : type === 'asteroid' ? 36 : 28
+  if (roll < 0.30) type = 'fuel'
+  else if (roll < 0.50) type = 'asteroid'
+  else if (roll < 0.68) type = 'meteor'
+  else if (roll < 0.84) type = 'junk'
+  else type = 'satellite'
+  const [w, h] = ENEMY_SIZE[type]
   const lo = top.left + 6
   const hi = top.right - w - 6
   const x = hi > lo ? rand(lo, hi) : (top.left + top.right) / 2 - w / 2
-  const vx = type === 'fuel' ? 0 : rand(40, 95) * (Math.random() < 0.5 ? -1 : 1)
+  const dir = Math.random() < 0.5 ? -1 : 1
+  const vx = type === 'fuel' ? 0 : (type === 'satellite' ? rand(25, 55) : rand(40, 95)) * dir
   const spin = type === 'asteroid' ? rand(-2, 2) : 0
   s.enemies.push({ type, x, y: -h - 4, w, h, vx, spin, rot: 0, alive: true })
 }
@@ -313,11 +327,23 @@ function hit(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
 
-function spawnExplosion(s, x, y) {
-  const colors = ['#fff3b0', '#ffcf3a', '#ff8a1a', '#ff5230', '#c9403a']
-  for (let i = 0; i < 30; i++) {
+const FIRE_COLORS = ['#fff3b0', '#ffcf3a', '#ff8a1a', '#ff5230', '#c9403a']
+// paleta/tamanho da explosão por tipo de alvo destruído
+const EXPLO_OPTS = {
+  asteroid: { count: 20, maxSpd: 190, colors: ['#e0dcd2', '#b8b0a4', '#8c8477', '#ffcf3a', '#ff8a1a'] },
+  meteor: { count: 22, maxSpd: 210, colors: FIRE_COLORS },
+  fuel: { count: 24, maxSpd: 200, colors: FIRE_COLORS },
+  satellite: { count: 24, maxSpd: 200, colors: ['#d5f0ff', '#6cc6ff', '#b8bcc8', '#ffd24d', '#ff8a1a'] },
+  junk: { count: 20, maxSpd: 185, colors: ['#f4f4f4', '#b8bcc8', '#5c554c', '#ffd24d', '#ff8a1a'] },
+}
+
+function spawnExplosion(s, x, y, opts = {}) {
+  const colors = opts.colors ?? FIRE_COLORS
+  const count = opts.count ?? 30
+  const maxSpd = opts.maxSpd ?? 230
+  for (let i = 0; i < count; i++) {
     const ang = rand(0, Math.PI * 2)
-    const spd = rand(40, 230)
+    const spd = rand(40, maxSpd)
     const dur = rand(0.5, 1.1)
     s.particles.push({
       x, y,
@@ -372,6 +398,7 @@ function killPlayer(s) {
   if (s.respawn > 0) return           // já está explodindo
   const p = s.player
   spawnExplosion(s, p.x + p.w / 2, p.y + p.h / 2)
+  playExplosion()
   s.lives--
   lives.value = s.lives
   s.respawn = RESPAWN_DELAY
@@ -383,6 +410,7 @@ function update(dt, s) {
 
   // sequência de morte: explode, congela o mundo por ~2s, depois renasce
   if (s.respawn > 0) {
+    setThrust(false)   // sem propulsão durante a explosão
     s.respawn -= dt * 1000
     if (s.respawn <= 0) {
       s.respawn = 0
@@ -399,6 +427,7 @@ function update(dt, s) {
   if (keys.up) s.speed = Math.min(maxSpd, s.speed + accel * dt)
   else if (keys.down) s.speed = Math.max(MIN_SPEED, s.speed - accel * dt)
   else s.speed += (cruise - s.speed) * Math.min(1, dt * 2)
+  setThrust(keys.up)   // som de propulsão enquanto acelera
 
   const move = s.speed * dt
   s.distance += move
@@ -480,7 +509,9 @@ function update(dt, s) {
       if (e.alive && hit(b, e)) {
         e.alive = false
         b.y = -999
-        s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
+        spawnExplosion(s, e.x + e.w / 2, e.y + e.h / 2, EXPLO_OPTS[e.type])
+        playExplosion()
+        s.score += Math.floor((SCORE_BY_TYPE[e.type] ?? 40) * (b.damage ?? 1))
         s.coinAcc += (COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD) * shipStats.coinMul
         const coinPayout = Math.floor(s.coinAcc)
         s.coinAcc -= coinPayout
@@ -517,6 +548,7 @@ function update(dt, s) {
         e.alive = false
         s.fuel = Math.min(s.fuelMax, s.fuel + Math.round(FUEL_REFILL * shipStats.fuelPickupMul))
         s.goldFlash = GOLD_DUR
+        playFuel()
       } else if (s.invuln <= 0) {
         e.alive = false
         damagePlayer(s)
@@ -744,6 +776,10 @@ function draw(s) {
       ctx.beginPath(); ctx.arc(rx * 0.3, ry * 0.28, rx * 0.16, 0, Math.PI * 2); ctx.fill()
       ctx.beginPath(); ctx.arc(rx * 0.18, -ry * 0.5, rx * 0.12, 0, Math.PI * 2); ctx.fill()
       ctx.restore()
+    } else if (e.type === 'satellite') {
+      drawSprite(ctx, e.x, e.y, SATELLITE, Math.round(e.w / SATELLITE[0].length))
+    } else if (e.type === 'junk') {
+      drawSprite(ctx, e.x, e.y, SPACE_JUNK, Math.round(e.w / SPACE_JUNK[0].length))
     } else {
       // meteoro
       const cx = e.x + e.w / 2, cy = e.y + e.h * 0.55
@@ -811,6 +847,8 @@ function frame(ts) {
     if (canvas.value && ctx?.canvas !== canvas.value) ctx = canvas.value.getContext('2d')
     update(dt, state)
     draw(state)
+  } else if (phase.value !== 'moon') {
+    setThrust(false)   // pausado / hangar / fim → sem propulsão (na Lua quem controla é o MoonLanding)
   }
   raf = requestAnimationFrame(frame)
 }
@@ -920,6 +958,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', kd)
   window.removeEventListener('keyup', ku)
   if (fireHold) clearInterval(fireHold)
+  setThrust(false)
 })
 </script>
 
