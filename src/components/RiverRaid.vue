@@ -230,9 +230,11 @@ function update(dt, s) {
 
   // aceleração / desaceleração
   const maxSpd = MAX_SPEED * shipStats.maxSpeedMul
-  if (keys.up) s.speed = Math.min(maxSpd, s.speed + 260 * dt)
-  else if (keys.down) s.speed = Math.max(MIN_SPEED, s.speed - 260 * dt)
-  else s.speed += (BASE_SPEED - s.speed) * Math.min(1, dt * 2)
+  const accel = 260 * shipStats.accelMul
+  const cruise = BASE_SPEED * shipStats.cruiseMul
+  if (keys.up) s.speed = Math.min(maxSpd, s.speed + accel * dt)
+  else if (keys.down) s.speed = Math.max(MIN_SPEED, s.speed - accel * dt)
+  else s.speed += (cruise - s.speed) * Math.min(1, dt * 2)
 
   const move = s.speed * dt
   s.distance += move

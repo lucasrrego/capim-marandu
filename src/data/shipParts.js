@@ -10,7 +10,7 @@ export const SHIP_PARTS = {
   wing: [
     { id: 'std', name: 'Padrão', desc: 'Equilíbrio entre manobra e resistência', wingW: 1, wingColor: '#d8d8d8', agility: 1, lifeBonus: 0 },
     { id: 'wide', name: 'Larga', desc: 'Manobra lenta, +1 vida', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82, lifeBonus: 1 },
-    { id: 'delta', name: 'Delta', desc: 'Manobra rápida no rio', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.18, lifeBonus: 0 },
+    { id: 'delta', name: 'Delta', desc: 'Manobra rápida, −1 vida', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.25, lifeBonus: -1 },
   ],
   body: [
     { id: 'std', name: 'Leve', desc: 'Fuselagem compacta', color: '#f4f4f4', armor: 1, fuelUse: 1 },
@@ -23,9 +23,9 @@ export const SHIP_PARTS = {
     { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
   ],
   engine: [
-    { id: 'std', name: 'Turbo', desc: 'Velocidade média confiável', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelEfficiency: 1 },
-    { id: 'after', name: 'Pós-combustão', desc: 'Velocidade máxima alta', flameColor: '#ff4d4d', power: 1.5, maxSpeed: 1.25, fuelEfficiency: 1 },
-    { id: 'eco', name: 'Econômico', desc: 'Menos consumo e fumaça', flameColor: '#37e0a0', power: 0.7, maxSpeed: 0.9, fuelEfficiency: 0.85 },
+    { id: 'std', name: 'Turbo', desc: 'Velocidade e consumo equilibrados', flameColor: '#ff8a1a', power: 1, maxSpeed: 1, fuelUse: 1, accelMul: 1, cruiseMul: 1 },
+    { id: 'after', name: 'Pós-combustão', desc: 'Muito rápido, gasta mais combustível', flameColor: '#ff4d4d', power: 1.5, maxSpeed: 1.38, fuelUse: 1.4, accelMul: 1.5, cruiseMul: 1.08 },
+    { id: 'eco', name: 'Econômico', desc: 'Lento, autonomia alta', flameColor: '#37e0a0', power: 0.7, maxSpeed: 0.82, fuelUse: 0.62, accelMul: 0.72, cruiseMul: 0.88 },
   ],
   weapon: [
     { id: 'cannon', name: 'Canhão', desc: 'Tiro único, dano padrão', bulletW: 4, bulletH: 12, bulletColor: '#ffe14d', fireCd: 200, damage: 1 },
@@ -64,12 +64,15 @@ export function buildShipStats(loadout) {
   const p = resolveLoadout(loadout)
   let startLives = BASE_LIVES + (p.wing.lifeBonus ?? 0)
   if (p.body.armor >= 1.3) startLives += 1
+  startLives = Math.max(1, startLives)
   return {
     agility: p.wing.agility,
     lifeBonus: p.wing.lifeBonus ?? 0,
     armor: p.body.armor,
-    fuelUse: p.body.fuelUse * (p.engine.fuelEfficiency ?? 1),
+    fuelUse: p.body.fuelUse * (p.engine.fuelUse ?? 1),
     maxSpeedMul: p.engine.maxSpeed,
+    accelMul: p.engine.accelMul ?? 1,
+    cruiseMul: p.engine.cruiseMul ?? 1,
     fireCd: p.weapon.fireCd,
     damage: p.weapon.damage * (p.nose.damageMul ?? 1),
     bulletW: p.weapon.bulletW,
