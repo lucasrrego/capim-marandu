@@ -141,6 +141,37 @@ export function buildShipStats(loadout) {
   }
 }
 
+// Lua compartilhada: mesma aparência no topo do percurso (River Raid) e na
+// tela de pouso. Disco cinza com crateras fixas (determinísticas → estável).
+const MOON_SURFACE = '#c9c6d6'
+const MOON_CRATER = '#b3b0c4'
+// crateras em coordenadas relativas ao raio (dx, dy, raio)
+const MOON_CRATERS = [
+  [-0.42, -0.28, 0.13], [0.30, -0.40, 0.10], [0.48, 0.10, 0.15],
+  [-0.15, 0.20, 0.18], [0.05, -0.10, 0.09], [-0.55, 0.22, 0.08],
+  [0.22, 0.45, 0.11], [-0.28, 0.52, 0.07],
+]
+
+export function drawMoon(ctx, cx, cy, r) {
+  ctx.save()
+  // halo suave
+  ctx.fillStyle = 'rgba(200, 205, 230, 0.12)'
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.12, 0, Math.PI * 2); ctx.fill()
+  // disco
+  ctx.fillStyle = MOON_SURFACE
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill()
+  // recorta as crateras dentro do disco
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip()
+  ctx.fillStyle = MOON_CRATER
+  for (const [dx, dy, cr] of MOON_CRATERS) {
+    ctx.beginPath(); ctx.arc(cx + dx * r, cy + dy * r, cr * r, 0, Math.PI * 2); ctx.fill()
+  }
+  // sombreado do terminador (borda inferior direita mais escura)
+  ctx.fillStyle = 'rgba(20, 15, 35, 0.18)'
+  ctx.beginPath(); ctx.arc(cx + r * 0.35, cy + r * 0.35, r, 0, Math.PI * 2); ctx.fill()
+  ctx.restore()
+}
+
 // --- foguete em pixel art ---
 // grade 13 col x 16 linhas; cada célula vira um bloco. Legenda:
 //   B corpo · H realce · S sombra · O contorno · N bico/trim · F aleta
