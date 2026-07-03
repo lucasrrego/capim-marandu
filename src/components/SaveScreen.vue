@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ACHIEVEMENTS } from '../data/achievements.js'
-import { SLOT_COUNT, getSlot, readSlotSummary } from '../data/saves.js'
+import { SLOT_COUNT, SECRET_SLOT, getSlot, readSlotSummary, rawKey } from '../data/saves.js'
+import { drawSprite, spriteSize, GUGU } from '../data/pixelSprites.js'
 
 const emit = defineEmits(['select', 'back'])
 
@@ -12,6 +13,29 @@ const active = getSlot()
 const slots = ref(
   Array.from({ length: SLOT_COUNT }, (_, i) => readSlotSummary(i + 1))
 )
+
+// mini Gugu escondido: 3 cliques → save secreto (tudo desbloqueado + 5000 moedas)
+const guguCanvas = ref(null)
+const guguWiggle = ref(false)
+let guguClicks = 0
+
+function tapGugu() {
+  guguClicks++
+  guguWiggle.value = false
+  requestAnimationFrame(() => (guguWiggle.value = true))
+  if (guguClicks >= 3) {
+    localStorage.setItem(rawKey(SECRET_SLOT, 'coins'), '5000')
+    localStorage.setItem(rawKey(SECRET_SLOT, 'achievements'), JSON.stringify(ACHIEVEMENTS.map((a) => a.id)))
+    emit('select', SECRET_SLOT)
+  }
+}
+
+onMounted(() => {
+  const ctx = guguCanvas.value.getContext('2d')
+  const scale = 5
+  const size = spriteSize(GUGU.idle, scale)
+  drawSprite(ctx, (guguCanvas.value.width - size.w) / 2, 0, GUGU.idle, scale)
+})
 </script>
 
 <template>
@@ -39,6 +63,16 @@ const slots = ref(
         </button>
       </li>
     </ul>
+
+    <canvas
+      ref="guguCanvas"
+      width="90"
+      height="90"
+      class="save-gugu"
+      :class="{ wiggle: guguWiggle }"
+      title="Gugu?"
+      @click="tapGugu"
+    ></canvas>
 
     <button class="save-back" @click="emit('back')">← Voltar</button>
   </div>
@@ -151,6 +185,24 @@ const slots = ref(
   opacity: 0.55;
   font-weight: normal;
   font-style: italic;
+}
+
+.save-gugu {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  margin-top: 4px;
+  image-rendering: pixelated;
+  cursor: pointer;
+  filter: drop-shadow(0 0 8px rgba(111, 207, 91, 0.35));
+}
+.save-gugu.wiggle {
+  animation: save-gugu-wiggle 0.35s ease;
+}
+@keyframes save-gugu-wiggle {
+  0%, 100% { transform: rotate(0) scale(1); }
+  30% { transform: rotate(-8deg) scale(1.12); }
+  70% { transform: rotate(8deg) scale(1.12); }
 }
 
 .save-back {

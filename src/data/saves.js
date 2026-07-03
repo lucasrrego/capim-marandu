@@ -22,6 +22,14 @@ export function slotKey(name) {
   return `${PREFIX}:s${activeSlot}:${name}`
 }
 
+// chave de um slot específico (sem trocar o ativo) — usado pelo slot secreto
+export function rawKey(slot, name) {
+  return `${PREFIX}:s${slot}:${name}`
+}
+
+// slot secreto (fora dos 1..SLOT_COUNT visíveis)
+export const SECRET_SLOT = 99
+
 // resumo de um slot sem trocar o ativo — usado na tela de seleção
 export function readSlotSummary(n) {
   const coins = Number(localStorage.getItem(`${PREFIX}:s${n}:coins`)) || 0
