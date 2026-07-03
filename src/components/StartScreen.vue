@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { drawSprite, GUGU } from '../data/pixelSprites.js'
 import { playConfirm, playSelect, playSparkle, startTheme, stopTheme } from '../audio/sfx.js'
 
+defineProps({ dev: { type: Boolean, default: false } })
 const emit = defineEmits(['play', 'achievements', 'minigame'])
 
 const guguCanvas = ref(null)
@@ -93,7 +94,7 @@ onUnmounted(() => {
       <p class="start-subtitle">Rumo à Lua</p>
 
       <button class="start-btn" @click="play" @pointerenter="playSelect">▶ Bora, Gugu!</button>
-      <button class="start-btn start-btn-mini" @click="openMinigame" @pointerenter="playSelect">🛸 Sonho da Vó Baiana</button>
+      <button v-if="dev" class="start-btn start-btn-mini" @click="openMinigame" @pointerenter="playSelect">🛸 Sonho da Vó Baiana</button>
       <button class="start-ach" @click="emit('achievements')" @pointerenter="playSelect">🏆 Conquistas</button>
     </div>
   </div>

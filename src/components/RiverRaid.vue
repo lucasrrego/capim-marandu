@@ -11,6 +11,9 @@ import SaveScreen from './SaveScreen.vue'
 import { DEFAULT_LOADOUT, buildShipStats, drawShip, drawMoon } from '../data/shipParts.js'
 import { unlock as unlockAchievement } from '../data/achievements.js'
 import { slotKey, setSlot } from '../data/saves.js'
+// Acessos diretos aos minigames de teste só existem em desenvolvimento.
+// No build (GitHub Pages) import.meta.env.DEV é false → botões escondidos.
+const isDev = import.meta.env.DEV
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
@@ -1166,9 +1169,10 @@ onUnmounted(() => {
           class="rr-hangar"
           @play="playIntro"
           @achievements="phase = 'achievements'"
+          :dev="isDev"
           @minigame="openAbduction"
         />
-        <button v-if="phase === 'start'" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
+        <button v-if="phase === 'start' && isDev" class="rr-moon-btn" @click="enterMoon(true)">🌙 Testar pouso na Lua</button>
 
         <SaveScreen
           v-else-if="phase === 'saves'"
