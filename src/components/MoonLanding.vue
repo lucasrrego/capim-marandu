@@ -234,7 +234,8 @@ function draw(s) {
   }
 
   const t = 1 - Math.min(1, s.alt / START_ALT)
-  const shipY = 60 + t * (groundY - 130)
+  // no toque (t=1) a base da nave encosta no topo da plataforma (groundY - 6)
+  const shipY = 60 + t * (groundY - 6 - SHIP_H - 60)
 
   // guia vertical de alinhamento (fica verde quando a nave está sobre a plataforma)
   if (stage.value === 'descent') {
