@@ -1,18 +1,19 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-
-// ---- Dimensões internas do canvas (o CSS escala mantendo proporção) ----
+import HangarScreen from './HangarScreen.vue'
+import { DEFAULT_LOADOUT, buildShipStats, drawShip } from '../data/shipParts.js'
 const W = 480
 const H = 640
 const ROW_H = 16                     // altura de cada faixa do terreno
 const N_ROWS = Math.ceil(H / ROW_H) + 3
 
 // ---- HUD reativo ----
-const phase = ref('start')           // 'start' | 'playing' | 'paused' | 'over'
+const phase = ref('start')           // 'start' | 'hangar' | 'playing' | 'paused' | 'over'
 const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
+const hangarLoadout = ref({ ...DEFAULT_LOADOUT })
 const coins = ref(0)
 
 const canvas = ref(null)
@@ -20,6 +21,8 @@ let ctx = null
 let raf = 0
 let last = 0
 let state = null
+let shipLoadout = { ...DEFAULT_LOADOUT }
+let shipStats = buildShipStats(shipLoadout)
 
 // ---- Constantes de jogo ----
 const BASE_SPEED = 120               // px/s de rolagem
@@ -28,7 +31,6 @@ const MAX_SPEED = 280
 const FUEL_MAX = 100
 const MIN_CHANNEL = 96               // largura mínima navegável do rio
 const MARGIN = 34                    // margem das margens em relação à borda
-const FIRE_CD = 200                  // ms entre tiros
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
 const RESPAWN_DELAY = 1000           // ms de explosão antes de renascer
 const GOLD_DUR = 450                 // ms de brilho dourado ao pegar combustível
@@ -147,8 +149,8 @@ function spawnEnemy(s) {
   const top = s.rows.reduce((a, r) => (r.y < a.y ? r : a), s.rows[0])
   const roll = Math.random()
   let type
-  if (roll < 0.25) type = 'fuel'
-  else if (roll < 0.62) type = 'asteroid'
+  if (roll < 0.35) type = 'fuel'
+  else if (roll < 0.675) type = 'asteroid'
   else type = 'meteor'
   const w = type === 'fuel' ? 26 : type === 'asteroid' ? 40 : 30
   const h = type === 'fuel' ? 30 : type === 'asteroid' ? 36 : 28
@@ -161,9 +163,17 @@ function spawnEnemy(s) {
 }
 
 function fire(s) {
-  if (s.time - s.lastFire < FIRE_CD) return
+  const cd = shipStats.fireCd
+  if (s.time - s.lastFire < cd) return
   s.lastFire = s.time
-  s.bullets.push({ x: s.player.x + s.player.w / 2 - 2, y: s.player.y - 4, w: 4, h: 12 })
+  const p = s.player
+  s.bullets.push({
+    x: p.x + p.w / 2 - shipStats.bulletW / 2,
+    y: p.y - 4,
+    w: shipStats.bulletW,
+    h: shipStats.bulletH,
+    damage: shipStats.damage,
+  })
 }
 
 function hit(a, b) {
@@ -205,7 +215,7 @@ function respawnPlayer(s) {
   p.x = (band.left + band.right) / 2 - p.w / 2   // nasce no meio do caminho permitido
   s.fuel = FUEL_MAX
   fuelPct.value = 100
-  s.invuln = RESPAWN_INVULN
+  s.invuln = RESPAWN_INVULN * shipStats.armor
   s.speed = BASE_SPEED
   s.enemies = s.enemies.filter((e) => e.y < p.y - 160)
 }
@@ -235,9 +245,12 @@ function update(dt, s) {
   }
 
   // aceleração / desaceleração
-  if (keys.up) s.speed = Math.min(MAX_SPEED, s.speed + 260 * dt)
-  else if (keys.down) s.speed = Math.max(MIN_SPEED, s.speed - 260 * dt)
-  else s.speed += (BASE_SPEED - s.speed) * Math.min(1, dt * 2)
+  const maxSpd = MAX_SPEED * shipStats.maxSpeedMul
+  const accel = 260 * shipStats.accelMul
+  const cruise = BASE_SPEED * shipStats.cruiseMul
+  if (keys.up) s.speed = Math.min(maxSpd, s.speed + accel * dt)
+  else if (keys.down) s.speed = Math.max(MIN_SPEED, s.speed - accel * dt)
+  else s.speed += (cruise - s.speed) * Math.min(1, dt * 2)
 
   const move = s.speed * dt
   s.distance += move
@@ -272,13 +285,13 @@ function update(dt, s) {
 
   // jogador
   const p = s.player
-  const pv = 240
+  const pv = 240 * shipStats.agility
   if (keys.left) p.x -= pv * dt
   if (keys.right) p.x += pv * dt
   p.x = Math.max(2, Math.min(W - p.w - 2, p.x))
 
   // combustível
-  s.fuel -= (5 * (s.speed / BASE_SPEED)) * dt
+  s.fuel -= (5 * (s.speed / BASE_SPEED) * shipStats.fuelUse) * dt
   if (s.invuln > 0) s.invuln -= dt * 1000
   if (s.goldFlash > 0) s.goldFlash -= dt * 1000
 
@@ -305,7 +318,7 @@ function update(dt, s) {
       if (e.alive && hit(b, e)) {
         e.alive = false
         b.y = -999
-        s.score += e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40
+        s.score += Math.floor((e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40) * (b.damage ?? 1))
         addCoins(COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD)
       }
     }
@@ -518,83 +531,22 @@ function draw(s) {
   }
 
   // tiros
-  ctx.fillStyle = '#ffe14d'
-  for (const b of s.bullets) ctx.fillRect(b.x, b.y, b.w, b.h)
+  for (const b of s.bullets) {
+    ctx.fillStyle = shipStats.bulletColor
+    ctx.fillRect(b.x, b.y, b.w, b.h)
+  }
 
-  // jogador (foguete) — some durante a explosão
+  // jogador (foguete montado) — some durante a explosão
   const p = s.player
   const blink = s.invuln > 0 && Math.floor(s.time / 120) % 2 === 0
   if (!blink && s.respawn <= 0) {
-    const cx = p.x + p.w / 2
-    const top = p.y
-    const bw = 7 // meia-largura do corpo
-
-    // brilho dourado ao pegar combustível
     const gi = s.goldFlash > 0 ? s.goldFlash / GOLD_DUR : 0
     if (gi > 0) {
       ctx.save()
       ctx.shadowColor = '#ffcf3a'
       ctx.shadowBlur = 6 + 20 * gi
     }
-    const bodyColor = gi > 0 ? '#ffd34d' : '#f4f4f4'
-    const trimColor = gi > 0 ? '#e0a020' : '#c9403a'
-
-    // chama (animada, atrás do foguete)
-    const fl = 8 + (Math.floor(s.time / 70) % 3) * 4
-    ctx.fillStyle = '#ff8a1a'
-    ctx.beginPath()
-    ctx.moveTo(cx - 5, top + p.h - 2)
-    ctx.lineTo(cx + 5, top + p.h - 2)
-    ctx.lineTo(cx, top + p.h + fl)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = '#ffe14d'
-    ctx.beginPath()
-    ctx.moveTo(cx - 2.5, top + p.h - 2)
-    ctx.lineTo(cx + 2.5, top + p.h - 2)
-    ctx.lineTo(cx, top + p.h + fl * 0.55)
-    ctx.closePath()
-    ctx.fill()
-
-    // aletas
-    ctx.fillStyle = trimColor
-    ctx.beginPath()
-    ctx.moveTo(cx - bw, top + p.h - 12)
-    ctx.lineTo(cx - bw - 6, top + p.h - 1)
-    ctx.lineTo(cx - bw, top + p.h - 3)
-    ctx.closePath()
-    ctx.fill()
-    ctx.beginPath()
-    ctx.moveTo(cx + bw, top + p.h - 12)
-    ctx.lineTo(cx + bw + 6, top + p.h - 1)
-    ctx.lineTo(cx + bw, top + p.h - 3)
-    ctx.closePath()
-    ctx.fill()
-
-    // corpo
-    ctx.fillStyle = bodyColor
-    ctx.fillRect(cx - bw, top + 9, bw * 2, p.h - 12)
-    // bico
-    ctx.fillStyle = trimColor
-    ctx.beginPath()
-    ctx.moveTo(cx, top)
-    ctx.lineTo(cx - bw, top + 10)
-    ctx.lineTo(cx + bw, top + 10)
-    ctx.closePath()
-    ctx.fill()
-    // escotilha
-    ctx.fillStyle = '#1a6fb0'
-    ctx.beginPath()
-    ctx.arc(cx, top + 17, 3.4, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#8fd0f5'
-    ctx.beginPath()
-    ctx.arc(cx - 1, top + 16, 1.3, 0, Math.PI * 2)
-    ctx.fill()
-    // bocal
-    ctx.fillStyle = '#555'
-    ctx.fillRect(cx - 4, top + p.h - 4, 8, 3)
-
+    drawShip(ctx, p.x, p.y, p.w, p.h, shipLoadout, s.time, { goldTint: gi })
     if (gi > 0) ctx.restore()
   }
 
@@ -623,10 +575,21 @@ function frame(ts) {
 }
 
 // ---- Controles ----
-function startGame() {
+function enterHangar() {
+  phase.value = 'hangar'
+}
+
+function startGame(loadout) {
+  const config = { ...DEFAULT_LOADOUT, ...(loadout ?? hangarLoadout.value) }
+  shipLoadout = config
+  shipStats = buildShipStats(shipLoadout)
   state = newState()
+  state.player.w = shipStats.hitboxW
+  state.player.h = shipStats.hitboxH
+  state.player.x = W / 2 - state.player.w / 2
+  state.lives = shipStats.startLives
   score.value = 0
-  lives.value = 3
+  lives.value = shipStats.startLives
   fuelPct.value = 100
   phase.value = 'playing'
   last = 0
@@ -646,7 +609,11 @@ function onKey(e, down) {
   if (k === 'arrowdown' || k === 's') keys.down = down
   if (k === ' ' && down && phase.value === 'playing') fire(state)
   if (k === 'p' && down) togglePause()
-  if (k === 'enter' && down && (phase.value === 'start' || phase.value === 'over')) startGame()
+  if (k === 'enter' && down) {
+    if (phase.value === 'start' || phase.value === 'over') enterHangar()
+    else if (phase.value === 'hangar') startGame()
+  }
+  if (k === 'escape' && down && phase.value === 'hangar') phase.value = 'start'
 }
 
 const kd = (e) => onKey(e, true)
@@ -662,7 +629,7 @@ let fireHold = null
 function holdFire(v) {
   if (v) {
     if (phase.value === 'playing') fire(state)
-    fireHold = setInterval(() => { if (phase.value === 'playing') fire(state) }, FIRE_CD)
+    fireHold = setInterval(() => { if (phase.value === 'playing') fire(state) }, shipStats.fireCd)
   } else if (fireHold) { clearInterval(fireHold); fireHold = null }
 }
 
@@ -684,41 +651,72 @@ onUnmounted(() => {
 
 <template>
   <div class="rr">
-    <h1 class="rr-title">🚀 River Raid</h1>
+    <div class="rr-main">
+      <div class="rr-stage">
+        <canvas ref="canvas" :width="W" :height="H"></canvas>
 
-    <div class="rr-hud">
-      <span>PONTOS <b>{{ score }}</b></span>
-      <span>VIDAS <b>{{ '❤️'.repeat(lives) || '—' }}</b></span>
-      <span>VEL <b>{{ speedLabel }}</b></span>
-      <span>MOEDAS <b>🪙 {{ coins }}</b></span>
-    </div>
+        <div v-if="phase === 'start'" class="rr-overlay">
+          <h2>River Raid</h2>
+          <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
+          <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
+          <button @click="enterHangar">▶ Jogar</button>
+        </div>
 
-    <div class="rr-fuel">
-      <div class="rr-fuel-bar" :style="{ width: fuelPct + '%' }"
-           :class="{ low: fuelPct < 25 }"></div>
-      <span class="rr-fuel-label">FUEL</span>
-    </div>
+        <HangarScreen
+          v-else-if="phase === 'hangar'"
+          v-model:loadout="hangarLoadout"
+          class="rr-hangar"
+          @launch="startGame"
+          @back="phase = 'start'"
+        />
 
-    <div class="rr-stage">
-      <canvas ref="canvas" :width="W" :height="H"></canvas>
+        <div v-else-if="phase === 'paused'" class="rr-overlay">
+          <h2>Pausado</h2>
+          <button @click="togglePause">▶ Continuar</button>
+        </div>
 
-      <div v-if="phase === 'start'" class="rr-overlay">
-        <h2>River Raid</h2>
-        <p>Pilote o foguete, desvie das margens,<br>destrua asteroides e meteoros, reabasteça no <b>F</b>.</p>
-        <p class="rr-keys">← → mover · ↑ ↓ acelerar · Espaço atirar · P pausar</p>
-        <button @click="startGame">▶ Jogar</button>
+        <div v-else-if="phase === 'over'" class="rr-overlay">
+          <h2>Fim de jogo</h2>
+          <p>Pontuação: <b>{{ score }}</b></p>
+          <button @click="enterHangar">↻ Jogar de novo</button>
+        </div>
       </div>
 
-      <div v-else-if="phase === 'paused'" class="rr-overlay">
-        <h2>Pausado</h2>
-        <button @click="togglePause">▶ Continuar</button>
-      </div>
+      <aside class="rr-panel">
+        <h1 class="rr-title">River Raid</h1>
 
-      <div v-else-if="phase === 'over'" class="rr-overlay">
-        <h2>Fim de jogo</h2>
-        <p>Pontuação: <b>{{ score }}</b></p>
-        <button @click="startGame">↻ Jogar de novo</button>
-      </div>
+        <div class="rr-stat">
+          <span class="rr-stat-label">Pontos</span>
+          <span class="rr-stat-value">{{ score }}</span>
+        </div>
+
+        <div class="rr-stat">
+          <span class="rr-stat-label">Moedas</span>
+          <span class="rr-stat-value rr-coins">🪙 {{ coins }}</span>
+        </div>
+
+        <div class="rr-stat">
+          <span class="rr-stat-label">Vidas</span>
+          <span class="rr-lives">
+            <span v-for="n in lives" :key="n" class="rr-life">🚀</span>
+            <span v-if="lives <= 0" class="rr-dash">—</span>
+          </span>
+        </div>
+
+        <div class="rr-stat">
+          <span class="rr-stat-label">Velocidade</span>
+          <span class="rr-stat-value">{{ speedLabel }}</span>
+        </div>
+
+        <div class="rr-stat rr-stat-fuel">
+          <span class="rr-stat-label">Combustível</span>
+          <div class="rr-fuel">
+            <div class="rr-fuel-bar" :style="{ width: fuelPct + '%' }"
+                 :class="{ low: fuelPct < 25 }"></div>
+            <span class="rr-fuel-label">{{ fuelPct }}%</span>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <div class="rr-touch">
@@ -740,27 +738,96 @@ onUnmounted(() => {
 .rr {
   /* largura do jogo limitada por largura E altura da tela, mantendo 480x640 */
   --gw: min(92vw, 480px, (100dvh - 190px) * 0.75);
+  --hud-dim: #8f83b3;
+  --hud-glow: rgba(155, 123, 255, 0.65);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 12px;
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: 'Orbitron', ui-monospace, Consolas, monospace;
 }
-.rr-title { margin: 0; font-size: 1.6rem; color: var(--text-h, #111); }
-.rr-hud {
+
+.rr-main {
   display: flex;
-  gap: 22px;
-  font-size: 0.95rem;
-  letter-spacing: 0.5px;
+  align-items: stretch;
+  gap: 16px;
 }
-.rr-hud b { color: var(--accent, #aa3bff); }
+
+.rr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  width: 200px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(52, 40, 84, 0.6), rgba(18, 13, 32, 0.72));
+  border: 1px solid rgba(155, 123, 255, 0.35);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4), inset 0 0 34px rgba(120, 90, 220, 0.09);
+}
+
+.rr-title {
+  margin: 0 0 2px;
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 0 12px var(--hud-glow), 0 0 2px #fff;
+}
+
+.rr-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.rr-stat-fuel { margin-top: auto; align-self: stretch; }
+
+.rr-stat-label {
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--hud-dim);
+}
+
+.rr-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 10px var(--hud-glow);
+  font-variant-numeric: tabular-nums;
+}
+.rr-coins {
+  color: #ffd24d;
+  text-shadow: 0 0 10px rgba(255, 207, 58, 0.6);
+}
+
+.rr-lives {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  font-size: 1.5rem;
+  line-height: 1;
+  min-height: 1.5rem;
+}
+.rr-life { filter: drop-shadow(0 0 5px rgba(255, 207, 58, 0.6)); }
+.rr-dash { color: var(--hud-dim); }
+
 .rr-fuel {
   position: relative;
-  width: var(--gw);
-  height: 18px;
-  background: #222;
-  border-radius: 4px;
+  width: 100%;
+  height: 22px;
+  margin-top: 4px;
+  background: #17121f;
+  border: 1px solid rgba(155, 123, 255, 0.3);
+  border-radius: 6px;
   overflow: hidden;
 }
 .rr-fuel-bar {
@@ -774,7 +841,8 @@ onUnmounted(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px #000;
 }
@@ -790,6 +858,10 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   background: #191228;
+}
+.rr-hangar {
+  position: absolute;
+  inset: 0;
 }
 .rr-overlay {
   position: absolute;
@@ -839,5 +911,29 @@ onUnmounted(() => {
 .rr-touch button:active { filter: brightness(1.4); }
 @media (hover: hover) and (pointer: fine) {
   .rr-touch { display: none; }
+}
+
+/* Telas estreitas: painel desce e vira uma faixa de status */
+@media (max-width: 720px) {
+  .rr-main { flex-direction: column; align-items: center; }
+  .rr-panel {
+    width: var(--gw);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 20px;
+    padding: 12px 14px;
+  }
+  .rr-title {
+    width: 100%;
+    text-align: center;
+    font-size: 1.4rem;
+    line-height: 1;
+    margin: 0;
+  }
+  .rr-stat-value { font-size: 1.5rem; }
+  .rr-lives { font-size: 1.2rem; }
+  .rr-stat-fuel { margin-top: 0; flex: 1 1 100%; }
 }
 </style>
