@@ -8,6 +8,7 @@ import {
   buildShipStats,
   drawShip,
 } from '../data/shipParts.js'
+import { playSelect, playConfirm, playSparkle } from '../audio/sfx.js'
 
 const loadout = defineModel('loadout', { type: Object, required: true })
 const coins = defineModel('coins', { type: Number, default: 0 })
@@ -44,8 +45,15 @@ const statRows = computed(() => [
   { label: 'Dano', value: stats.value.damage.toFixed(2) + 'x' },
 ])
 
+function pickCategory(key) {
+  if (key === activeCategory.value) return
+  activeCategory.value = key
+  playSelect()
+}
+
 function selectPart(id) {
   loadout.value = { ...loadout.value, [activeCategory.value]: id }
+  playSelect()
 }
 
 function buyUpgrade(track) {
@@ -57,6 +65,7 @@ function buyUpgrade(track) {
   if (coins.value < cost) return
   coins.value -= cost
   loadout.value = { ...loadout.value, [store]: { ...cur, [track.key]: lvl + 1 } }
+  playSparkle()   // upgrade comprado
 }
 
 function drawPreview(ts) {
@@ -91,7 +100,13 @@ function drawPreview(ts) {
 }
 
 function launch() {
+  playConfirm()
   emit('launch', { ...loadout.value })
+}
+
+function goBack() {
+  playSelect()
+  emit('back')
 }
 
 onMounted(() => {
@@ -128,7 +143,7 @@ onUnmounted(() => {
             v-for="cat in PART_CATEGORIES"
             :key="cat.key"
             :class="{ active: activeCategory === cat.key }"
-            @click="activeCategory = cat.key"
+            @click="pickCategory(cat.key)"
           >
             {{ cat.label }}
           </button>
@@ -182,7 +197,7 @@ onUnmounted(() => {
     </dl>
 
     <div class="hangar-actions">
-      <button class="hangar-btn secondary" @click="$emit('back')">← Voltar</button>
+      <button class="hangar-btn secondary" @click="goBack">← Voltar</button>
       <button class="hangar-btn primary" @click="launch">🚀 Lançar</button>
     </div>
   </div>
