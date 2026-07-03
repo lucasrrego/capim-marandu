@@ -536,7 +536,7 @@ function draw(s) {
     ctx.fillRect(b.x, b.y, b.w, b.h)
   }
 
-  // jogador (nave montada) — some durante a explosão
+  // jogador (foguete montado) — some durante a explosão
   const p = s.player
   const blink = s.invuln > 0 && Math.floor(s.time / 120) % 2 === 0
   if (!blink && s.respawn <= 0) {
@@ -546,7 +546,7 @@ function draw(s) {
       ctx.shadowColor = '#ffcf3a'
       ctx.shadowBlur = 6 + 20 * gi
     }
-    drawShip(ctx, p.x, p.y, p.w, p.h, shipLoadout, s.time)
+    drawShip(ctx, p.x, p.y, p.w, p.h, shipLoadout, s.time, { goldTint: gi })
     if (gi > 0) ctx.restore()
   }
 

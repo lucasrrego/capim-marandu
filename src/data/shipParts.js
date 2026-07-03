@@ -8,7 +8,7 @@ export const PART_CATEGORIES = [
 
 export const SHIP_PARTS = {
   wing: [
-    { id: 'std', name: 'Padrão', desc: 'Equilíbrio entre manobra e resistência', wingW: 1, wingColor: '#d8d8d8', agility: 1, lifeBonus: 0 },
+    { id: 'std', name: 'Padrão', desc: 'Equilíbrio entre manobra e resistência', wingW: 1, wingColor: '#c9403a', agility: 1, lifeBonus: 0 },
     { id: 'wide', name: 'Larga', desc: 'Manobra lenta, +1 vida', wingW: 1.35, wingColor: '#a8bdd4', agility: 0.82, lifeBonus: 1 },
     { id: 'delta', name: 'Delta', desc: 'Manobra rápida, −1 vida', wingW: 0.85, wingColor: '#c8c8c8', agility: 1.25, lifeBonus: -1 },
   ],
@@ -18,7 +18,7 @@ export const SHIP_PARTS = {
     { id: 'stream', name: 'Aerodinâmico', desc: 'Menos consumo de combustível', color: '#e8eef8', armor: 0.85, fuelUse: 0.82 },
   ],
   nose: [
-    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#f4f4f4', damageMul: 1, hitboxW: 1 },
+    { id: 'std', name: 'Cônico', desc: 'Perfil clássico de ataque', shape: 'cone', length: 0, tipColor: '#c9403a', damageMul: 1, hitboxW: 1 },
     { id: 'sharp', name: 'Agulha', desc: '+15% dano nos abates', shape: 'needle', length: 6, tipColor: '#ffe14d', damageMul: 1.15, hitboxW: 1 },
     { id: 'blunt', name: 'Rombo', desc: 'Hitbox frontal mais larga', shape: 'blunt', length: -2, tipColor: '#d0d0d0', damageMul: 1, hitboxW: 1.12 },
   ],
@@ -84,77 +84,119 @@ export function buildShipStats(loadout) {
   }
 }
 
-export function drawShip(ctx, x, y, w, h, loadout, time = 0) {
+export function drawShip(ctx, x, y, w, h, loadout, time = 0, opts = {}) {
   const parts = resolveLoadout(loadout)
   const cx = x + w / 2
+  const top = y
+  const bw = w * (parts.nose.shape === 'blunt' ? 0.31 : 0.27)
+  const gold = opts.goldTint ?? 0
 
-  // asas
-  const wingW = w * parts.wing.wingW
-  const wingX = x + (w - wingW) / 2
-  const wingY = y + h * 0.55
-  ctx.fillStyle = parts.wing.wingColor
-  ctx.fillRect(wingX, wingY, wingW, 7)
-  if (parts.wing.id === 'delta') {
+  const bodyColor = gold > 0 ? '#ffd34d' : parts.body.color
+  const trimColor = gold > 0 ? '#e0a020' : parts.nose.tipColor
+  const finColor = gold > 0 ? '#e0a020' : parts.wing.wingColor
+
+  // chama (animada, atrás do foguete)
+  const fl = (8 + (Math.floor(time / 70) % 3) * 4) * (h / 32) * parts.engine.power
+  const flameW = w * 0.38 * Math.min(1.4, parts.engine.power)
+  ctx.fillStyle = parts.engine.flameColor
+  ctx.beginPath()
+  ctx.moveTo(cx - flameW / 2, top + h - h * 0.06)
+  ctx.lineTo(cx + flameW / 2, top + h - h * 0.06)
+  ctx.lineTo(cx, top + h + fl)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#ffe14d'
+  ctx.beginPath()
+  ctx.moveTo(cx - flameW * 0.33, top + h - h * 0.06)
+  ctx.lineTo(cx + flameW * 0.33, top + h - h * 0.06)
+  ctx.lineTo(cx, top + h + fl * 0.55)
+  ctx.closePath()
+  ctx.fill()
+  if (parts.engine.id === 'after') {
+    ctx.fillStyle = '#fff59d'
     ctx.beginPath()
-    ctx.moveTo(wingX, wingY + 7)
-    ctx.lineTo(cx, wingY + 14)
-    ctx.lineTo(wingX + wingW, wingY + 7)
+    ctx.moveTo(cx - w * 0.08, top + h + fl * 0.35)
+    ctx.lineTo(cx + w * 0.08, top + h + fl * 0.35)
+    ctx.lineTo(cx, top + h + fl * 1.15)
     ctx.closePath()
     ctx.fill()
   }
 
-  // corpo
-  ctx.fillStyle = parts.body.color
-  const bodyTop = y + parts.nose.length
-  const half = parts.nose.shape === 'blunt' ? 7 : 5
+  // aletas
+  const finBase = parts.wing.id === 'delta' ? 0.15 : 0.23
+  const finExt = w * finBase * (parts.wing.wingW ?? 1)
+  const finDrop = h * (parts.wing.id === 'wide' ? 0.42 : 0.375)
+  ctx.fillStyle = finColor
   ctx.beginPath()
-  ctx.moveTo(cx, bodyTop)
-  ctx.lineTo(cx + half, y + h)
-  ctx.lineTo(cx - half, y + h)
+  ctx.moveTo(cx - bw, top + h - finDrop)
+  ctx.lineTo(cx - bw - finExt, top + h - h * 0.03)
+  ctx.lineTo(cx - bw, top + h - h * 0.09)
+  ctx.closePath()
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(cx + bw, top + h - finDrop)
+  ctx.lineTo(cx + bw + finExt, top + h - h * 0.03)
+  ctx.lineTo(cx + bw, top + h - h * 0.09)
   ctx.closePath()
   ctx.fill()
 
+  // corpo
+  const bodyTop = top + h * 0.28 + (parts.nose.length ?? 0) * (h / 32)
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(cx - bw, bodyTop, bw * 2, h - bodyTop + top - h * 0.125)
+
   // bico
+  ctx.fillStyle = trimColor
   if (parts.nose.shape === 'needle') {
-    ctx.fillStyle = parts.nose.tipColor
     ctx.beginPath()
-    ctx.moveTo(cx, bodyTop - 8)
-    ctx.lineTo(cx + 3, bodyTop)
-    ctx.lineTo(cx - 3, bodyTop)
+    ctx.moveTo(cx, top - h * 0.12)
+    ctx.lineTo(cx - bw * 0.55, bodyTop)
+    ctx.lineTo(cx + bw * 0.55, bodyTop)
     ctx.closePath()
     ctx.fill()
   } else if (parts.nose.shape === 'blunt') {
-    ctx.fillStyle = parts.nose.tipColor
-    ctx.fillRect(cx - 6, bodyTop - 2, 12, 4)
+    ctx.fillRect(cx - bw, bodyTop - h * 0.06, bw * 2, h * 0.08)
+    ctx.beginPath()
+    ctx.moveTo(cx, top)
+    ctx.lineTo(cx - bw, bodyTop)
+    ctx.lineTo(cx + bw, bodyTop)
+    ctx.closePath()
+    ctx.fill()
+  } else {
+    ctx.beginPath()
+    ctx.moveTo(cx, top)
+    ctx.lineTo(cx - bw, bodyTop)
+    ctx.lineTo(cx + bw, bodyTop)
+    ctx.closePath()
+    ctx.fill()
   }
 
-  // cauda
-  ctx.fillStyle = parts.wing.wingColor
-  ctx.fillRect(cx - 10, y + h - 6, 20, 6)
+  // escotilha
+  ctx.fillStyle = '#1a6fb0'
+  ctx.beginPath()
+  ctx.arc(cx, top + h * 0.53, w * 0.13, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#8fd0f5'
+  ctx.beginPath()
+  ctx.arc(cx - w * 0.04, top + h * 0.5, w * 0.05, 0, Math.PI * 2)
+  ctx.fill()
 
-  // motor
-  const flicker = Math.sin(time / 70) * 2
-  const flameH = 6 + parts.engine.power * 5 + flicker
-  const flameW = 4 + parts.engine.power * 2
-  ctx.fillStyle = parts.engine.flameColor
-  ctx.fillRect(cx - flameW / 2, y + h, flameW, flameH)
-  if (parts.engine.id === 'after') {
-    ctx.fillStyle = '#ffe14d'
-    ctx.fillRect(cx - 2, y + h + flameH * 0.4, 4, flameH * 0.5)
-  }
+  // bocal
+  ctx.fillStyle = '#555'
+  ctx.fillRect(cx - w * 0.15, top + h - h * 0.125, w * 0.3, h * 0.094)
 
   // arma
   ctx.fillStyle = parts.weapon.bulletColor
   if (parts.weapon.id === 'cannon') {
-    ctx.fillRect(cx - 2, bodyTop - 2, 4, 8)
+    ctx.fillRect(cx - w * 0.08, bodyTop - h * 0.06, w * 0.15, h * 0.25)
   } else if (parts.weapon.id === 'rapid') {
-    ctx.fillRect(cx - 5, wingY - 2, 3, 6)
-    ctx.fillRect(cx + 2, wingY - 2, 3, 6)
+    ctx.fillRect(cx - bw - w * 0.04, bodyTop + h * 0.08, w * 0.12, h * 0.19)
+    ctx.fillRect(cx + bw - w * 0.08, bodyTop + h * 0.08, w * 0.12, h * 0.19)
   } else {
     ctx.beginPath()
-    ctx.arc(cx, bodyTop + 4, 5, 0, Math.PI * 2)
+    ctx.arc(cx, bodyTop + h * 0.12, w * 0.19, 0, Math.PI * 2)
     ctx.fill()
     ctx.fillStyle = '#fff'
-    ctx.fillRect(cx - 1, bodyTop + 1, 2, 6)
+    ctx.fillRect(cx - w * 0.04, bodyTop + h * 0.03, w * 0.08, h * 0.19)
   }
 }
