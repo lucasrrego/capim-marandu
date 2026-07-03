@@ -35,7 +35,10 @@ const GOLD_DUR = 450                 // ms de brilho dourado ao pegar combustív
 
 // ---- Economia (moedas persistidas entre partidas) ----
 const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
-const COIN_PER_KILL = 1                    // moedas por vilão destruído
+// Recompensa de moedas por tipo destruído. Para novos vilões, basta
+// adicionar a entrada aqui; tipos não mapeados usam DEFAULT_COIN_REWARD.
+const COIN_REWARDS = { asteroid: 1, meteor: 1, fuel: 1 }
+const DEFAULT_COIN_REWARD = 1
 
 const keys = {}
 
@@ -303,7 +306,7 @@ function update(dt, s) {
         e.alive = false
         b.y = -999
         s.score += e.type === 'asteroid' ? 60 : e.type === 'meteor' ? 90 : 40
-        if (e.type === 'asteroid' || e.type === 'meteor') addCoins(COIN_PER_KILL)
+        addCoins(COIN_REWARDS[e.type] ?? DEFAULT_COIN_REWARD)
       }
     }
   }
