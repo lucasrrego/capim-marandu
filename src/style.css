@@ -14,6 +14,33 @@
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
+  --pixel: 'Press Start 2P', ui-monospace, monospace;
+  --retro: 'VT323', ui-monospace, monospace;
+
+  /* ---- Paleta pixel art (fonte única de verdade; espelhada em pixelSprites.js) ---- */
+  /* espaço / UI */
+  --px-space-0: #04040a;
+  --px-space-1: #150f28;
+  --px-space-2: #2a2142;
+  --px-purple: #9b7bff;
+  --px-purple-hi: #c9b6ff;
+  --px-blue: #6cc6ff;
+  --px-blue-hi: #d5f0ff;
+  /* Gugu (verdes) */
+  --px-green-lo: #2b7a28;
+  --px-green: #3fa03a;
+  --px-green-hi: #6fcf5b;
+  /* foguete / perigo (vermelhos) */
+  --px-red-lo: #7a1f18;
+  --px-red: #d0392e;
+  /* combustível / faíscas (amarelos-laranja) */
+  --px-gold: #ffd24d;
+  --px-yellow: #ffe27a;
+  --px-orange: #ff8a1a;
+  /* neutros */
+  --px-white: #f4f4f4;
+  --px-gray: #b8bcc8;
+  --px-ink: #12131a;
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
