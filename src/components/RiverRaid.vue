@@ -1135,7 +1135,10 @@ function openAbduction() {
   phase.value = 'minigame'
 }
 
+const WARP_INVULN = 2000   // ms de invuln ao voltar do warp (não explode na parede)
+
 function exitMinigame() {
+  if (state) state.invuln = Math.max(state.invuln, WARP_INVULN)
   phase.value = 'playing'
   last = 0
 }
@@ -1152,6 +1155,7 @@ function onBossCleared(coins) {
     state.runCoins += n
     runCoins.value = state.runCoins
   }
+  state.invuln = Math.max(state.invuln, WARP_INVULN)
   phase.value = 'playing'
   last = 0
 }
