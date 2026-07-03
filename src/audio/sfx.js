@@ -72,6 +72,207 @@ export function playSparkle() {
   playBlip({ notes: [72, 76, 79, 84, 88], type: 'triangle', gain: 0.3, step: 0.05, dur: 0.16 })
 }
 
+/** Fanfarra de sucesso (ex.: pouso bem-sucedido). */
+export function playSuccess() {
+  playBlip({ notes: [72, 76, 79, 84, 88, 91], type: 'square', gain: 0.32, step: 0.09, dur: 0.16 })
+}
+
+/** Coleta de combustível (blip arcade tipo "moeda", subindo). */
+export function playFuel() {
+  playBlip({ notes: [84, 91], type: 'square', gain: 0.3, step: 0.07, dur: 0.13 })
+}
+
+// curva de distorção (grit/rugido) pro corpo da explosão
+function distortionCurve(amount = 60) {
+  const n = 256
+  const curve = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1
+    curve[i] = ((3 + amount) * x * 0.35) / (Math.PI + amount * Math.abs(x))
+  }
+  return curve
+}
+
+/**
+ * Explosão pesada e ALTA: ruído marrom com distorção forte + punch duplo
+ * (triângulo + serra grave) + sub, tudo por um compressor + makeup pra
+ * ficar grosso e alto. `gain` = makeup final (volume geral).
+ */
+export function playExplosion(gain = 1.45) {
+  const c = getCtx()
+  if (!c) return
+  resume()
+  const now = c.currentTime
+  const dur = 0.85
+
+  // master: compressor "cola" os picos e o makeup levanta o volume percebido
+  const comp = c.createDynamicsCompressor()
+  comp.threshold.value = -22
+  comp.knee.value = 10
+  comp.ratio.value = 8
+  comp.attack.value = 0.002
+  comp.release.value = 0.25
+  const master = c.createGain()
+  master.gain.value = gain
+  comp.connect(master)
+  master.connect(c.destination)
+
+  const out = c.createGain()
+  out.gain.value = 1.0
+  out.connect(comp)
+
+  // 1) corpo: ruído MARROM (grave) por lowpass caindo + distorção forte
+  const len = Math.floor(c.sampleRate * dur)
+  const buffer = c.createBuffer(1, len, c.sampleRate)
+  const data = buffer.getChannelData(0)
+  let brown = 0
+  for (let i = 0; i < len; i++) {
+    const white = Math.random() * 2 - 1
+    brown = (brown + 0.02 * white) / 1.02
+    const env = Math.pow(1 - i / len, 1.3)
+    data[i] = brown * 4 * env
+  }
+  const noise = c.createBufferSource()
+  noise.buffer = buffer
+  const lp = c.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.setValueAtTime(1000, now)
+  lp.frequency.exponentialRampToValueAtTime(70, now + dur)
+  const shaper = c.createWaveShaper()
+  shaper.curve = distortionCurve(80)
+  const ng = c.createGain()
+  ng.gain.setValueAtTime(1.0, now)
+  ng.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+  noise.connect(lp)
+  lp.connect(shaper)
+  shaper.connect(ng)
+  ng.connect(out)
+  noise.start(now)
+  noise.stop(now + dur)
+
+  // 2) punch DUPLO (triângulo + serra grave) por lowpass — engrossa o baque
+  const p1 = c.createOscillator()
+  p1.type = 'triangle'
+  p1.frequency.setValueAtTime(150, now)
+  p1.frequency.exponentialRampToValueAtTime(46, now + 0.28)
+  const p2 = c.createOscillator()
+  p2.type = 'sawtooth'
+  p2.frequency.setValueAtTime(90, now)
+  p2.frequency.exponentialRampToValueAtTime(34, now + 0.28)
+  const plp = c.createBiquadFilter()
+  plp.type = 'lowpass'
+  plp.frequency.value = 520
+  const pg = c.createGain()
+  pg.gain.setValueAtTime(1.0, now)
+  pg.gain.exponentialRampToValueAtTime(0.0001, now + 0.45)
+  p1.connect(plp)
+  p2.connect(plp)
+  plp.connect(pg)
+  pg.connect(out)
+  p1.start(now)
+  p2.start(now)
+  p1.stop(now + 0.47)
+  p2.stop(now + 0.47)
+
+  // 3) sub pra fones (bem grave)
+  const sub = c.createOscillator()
+  sub.type = 'sine'
+  sub.frequency.setValueAtTime(75, now)
+  sub.frequency.exponentialRampToValueAtTime(26, now + 0.55)
+  const sg = c.createGain()
+  sg.gain.setValueAtTime(0.9, now)
+  sg.gain.exponentialRampToValueAtTime(0.0001, now + 0.62)
+  sub.connect(sg)
+  sg.connect(out)
+  sub.start(now)
+  sub.stop(now + 0.64)
+
+  // 4) impacto: estouro curto em médio-grave (não fino)
+  const crackBuf = c.createBuffer(1, Math.floor(c.sampleRate * 0.06), c.sampleRate)
+  const cd = crackBuf.getChannelData(0)
+  for (let i = 0; i < cd.length; i++) cd[i] = Math.random() * 2 - 1
+  const crack = c.createBufferSource()
+  crack.buffer = crackBuf
+  const bpf = c.createBiquadFilter()
+  bpf.type = 'bandpass'
+  bpf.frequency.value = 450
+  bpf.Q.value = 0.7
+  const cg = c.createGain()
+  cg.gain.setValueAtTime(0.6, now)
+  cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.07)
+  crack.connect(bpf)
+  bpf.connect(cg)
+  cg.connect(out)
+  crack.start(now)
+  crack.stop(now + 0.07)
+}
+
+// ---- Propulsão contínua (segurar acelerar) ------------------------------
+
+let thrustNodes = null
+
+/**
+ * Liga/desliga o som de propulsão. Idempotente: chamar com o mesmo estado
+ * repetidamente (ex.: todo frame) não empilha nem corta o som.
+ */
+export function setThrust(on) {
+  const c = getCtx()
+  if (!c) return
+
+  if (on) {
+    if (thrustNodes) return
+    resume()
+    const now = c.currentTime
+
+    const master = c.createGain()
+    master.gain.setValueAtTime(0.0001, now)
+    master.gain.exponentialRampToValueAtTime(0.16, now + 0.09)
+    master.connect(c.destination)
+
+    // rumble: dente-de-serra grave por lowpass
+    const osc = c.createOscillator()
+    osc.type = 'sawtooth'
+    osc.frequency.value = 72
+    const lp = c.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 320
+    osc.connect(lp)
+    lp.connect(master)
+    osc.start(now)
+
+    // chiado: ruído em loop por bandpass
+    const buffer = c.createBuffer(1, Math.floor(c.sampleRate * 0.5), c.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+    const noise = c.createBufferSource()
+    noise.buffer = buffer
+    noise.loop = true
+    const bp = c.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = 900
+    bp.Q.value = 0.7
+    const ng = c.createGain()
+    ng.gain.value = 0.5
+    noise.connect(bp)
+    bp.connect(ng)
+    ng.connect(master)
+    noise.start(now)
+
+    thrustNodes = { master, osc, noise }
+  } else {
+    if (!thrustNodes) return
+    const { master, osc, noise } = thrustNodes
+    thrustNodes = null
+    try {
+      const now = c.currentTime
+      master.gain.setTargetAtTime(0.0001, now, 0.05)
+      osc.stop(now + 0.2)
+      noise.stop(now + 0.2)
+      setTimeout(() => { try { master.disconnect() } catch { /* noop */ } }, 400)
+    } catch { /* contexto pode já estar indisponível */ }
+  }
+}
+
 // ---- Trilha (mesma melodia da intro) ------------------------------------
 
 const LEAD = [
