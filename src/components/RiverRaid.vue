@@ -13,6 +13,7 @@ const score = ref(0)
 const lives = ref(3)
 const fuelPct = ref(100)
 const speedLabel = ref('1x')
+const coins = ref(0)
 
 const canvas = ref(null)
 let ctx = null
@@ -30,9 +31,21 @@ const MARGIN = 34                    // margem das margens em relação à borda
 const FIRE_CD = 200                  // ms entre tiros
 const RESPAWN_INVULN = 1800          // ms de invulnerabilidade após reviver
 
+// ---- Economia (moedas persistidas entre partidas) ----
+const COINS_KEY = 'capim-marandu:coins'   // contrato com a branch do Hangar
+const COIN_PER_KILL = 1                    // moedas por vilão destruído
+
 const keys = {}
 
 function rand(a, b) { return a + Math.random() * (b - a) }
+
+function loadCoins() {
+  coins.value = Number(localStorage.getItem(COINS_KEY)) || 0
+}
+function addCoins(n) {
+  coins.value += n
+  localStorage.setItem(COINS_KEY, String(coins.value))
+}
 
 // ---- Gerador procedural das margens do rio ----
 function makeGen() {
@@ -189,6 +202,7 @@ function update(dt, s) {
         e.alive = false
         b.y = -999
         s.score += e.type === 'ship' ? 60 : e.type === 'heli' ? 90 : 40
+        if (e.type === 'ship' || e.type === 'heli') addCoins(COIN_PER_KILL)
       }
     }
   }
@@ -387,6 +401,7 @@ function holdFire(v) {
 
 onMounted(() => {
   ctx = canvas.value.getContext('2d')
+  loadCoins()
   window.addEventListener('keydown', kd)
   window.addEventListener('keyup', ku)
   raf = requestAnimationFrame(frame)
@@ -408,6 +423,7 @@ onUnmounted(() => {
       <span>PONTOS <b>{{ score }}</b></span>
       <span>VIDAS <b>{{ '❤️'.repeat(lives) || '—' }}</b></span>
       <span>VEL <b>{{ speedLabel }}</b></span>
+      <span>MOEDAS <b>🪙 {{ coins }}</b></span>
     </div>
 
     <div class="rr-fuel">
